@@ -1,0 +1,15 @@
+{
+  "user": {
+    "role": "data_scientist"
+  },
+  "action": "infer",
+  "usecase": "customer_service",
+  "resource": {
+    "type": "llm_model",
+    "model_id": "gpt-4",
+    "status": "approved",
+    "monitoring": {
+      "active": true
+    }
+  }
+}
