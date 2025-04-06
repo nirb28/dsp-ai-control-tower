@@ -163,3 +163,136 @@ test_deny_missing_train_requirements if {
     # Assert that access is denied
     not policy.allow with input as mock_input
 }
+
+# Test user ID based role assignment
+test_user_id_role_assignment if {
+    # Test user with user ID "user123" (llm_admin)
+    mock_input := {
+        "user": {
+            "id": "user123",
+            "groups": []
+        },
+        "action": "deploy",
+        "resource": {
+            "type": "llm_model",
+            "model_id": "claude-2",
+            "approvals": {
+                "security": true,
+                "compliance": true,
+                "mrm": true
+            },
+            "deployment_plan": {
+                "exists": true,
+                "approved": true
+            }
+        },
+        "usecase": "customer_service"
+    }
+    
+    # Assert that access is allowed (user123 is llm_admin)
+    policy.allow with input as mock_input
+}
+
+# Test group ID based role assignment
+test_group_id_role_assignment if {
+    # Test user with no direct role but belongs to group002 (data_scientist)
+    mock_input := {
+        "user": {
+            "id": "user999", # Not in user_roles
+            "groups": ["group002"]
+        },
+        "action": "train",
+        "resource": {
+            "type": "llm_model",
+            "model_id": "gpt-4",
+            "training_data": {"approved": true},
+            "risk_assessment": {
+                "completed": true,
+                "approved": true
+            },
+            "mrm_review": {
+                "completed": true,
+                "approved": true
+            }
+        },
+        "usecase": "customer_service"
+    }
+    
+    # Assert that access is allowed (group002 is data_scientist)
+    policy.allow with input as mock_input
+}
+
+# Test multiple group memberships (highest privilege wins)
+test_multiple_group_memberships if {
+    # Test user with multiple group memberships
+    mock_input := {
+        "user": {
+            "id": "user888", # Not in user_roles
+            "groups": ["group004", "group003", "group001"] # business_user, ml_engineer, llm_admin
+        },
+        "action": "delete", # Only llm_admin can delete
+        "resource": {
+            "type": "llm_model",
+            "model_id": "gpt-4"
+        },
+        "usecase": "customer_service"
+    }
+    
+    # Assert that access is allowed (highest privilege is llm_admin from group001)
+    policy.allow with input as mock_input
+}
+
+# Test user ID takes precedence over group ID
+test_user_id_precedence if {
+    # Test user with both direct role and group memberships
+    mock_input := {
+        "user": {
+            "id": "user456", # data_scientist in user_roles
+            "groups": ["group001"] # llm_admin in group_roles
+        },
+        "action": "train",
+        "resource": {
+            "type": "llm_model",
+            "model_id": "gpt-4",
+            "training_data": {"approved": true},
+            "risk_assessment": {
+                "completed": true,
+                "approved": true
+            },
+            "mrm_review": {
+                "completed": true,
+                "approved": true
+            }
+        },
+        "usecase": "customer_service"
+    }
+    
+    # Assert that access is allowed (user456 is data_scientist, which can train)
+    policy.allow with input as mock_input
+    
+    # Also verify that the effective role is data_scientist (from user ID) not llm_admin (from group ID)
+    role := policy.effective_role with input as mock_input
+    role == "data_scientist"
+}
+
+# Test unauthorized user
+test_unauthorized_user if {
+    # Test user with no role and no group membership
+    mock_input := {
+        "user": {
+            "id": "unknown_user",
+            "groups": []
+        },
+        "action": "infer",
+        "resource": {
+            "type": "llm_model",
+            "model_id": "gpt-4",
+            "status": "approved",
+            "monitoring": {"active": true}
+        },
+        "usecase": "customer_service"
+    }
+    
+    # Assert that access is denied
+    not policy.allow with input as mock_input
+}

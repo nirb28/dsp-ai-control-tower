@@ -1,0 +1,14 @@
+{
+  "user": {
+    "id": "user4561",
+    "groups": ["group001"],
+    "role1": "data_scientist"},
+  "action": "infer",
+  "resource": {
+    "type": "llm_model",
+    "model_id": "gpt-4",
+    "status": "approved",
+    "monitoring": {"active": true}
+  },
+  "usecase": "customer_service"
+}
