@@ -3,7 +3,9 @@ package dspai.policy
 import rego.v1
 
 # Client authentication
-client_secret := "customer_service_secret_123"
+# The secret is now hashed with SHA-256 and salt
+client_secret := "db4a2b9e13a5b84c2c01a95e937ae816f9065ccb03f01f6cedc1baf310fe9ec9" # Hash of "password" with the salt below
+client_salt := "0123456789abcdef0123456789abcdef" # Example salt
 
 # Declare version
 version = 1

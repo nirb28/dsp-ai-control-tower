@@ -30,10 +30,10 @@ def test_evaluate_policy():
         "usecase": "customer_service"
     }
     
-    # Use client ID and client secret in headers
+    # Use client ID and client secret in headers with the DSPAI prefix
     headers = {
-        "X-Client-ID": "customer_service",
-        "X-Client-Secret": "customer_service_secret_123"
+        "X-DSPAI-Client-ID": "customer_service",
+        "X-DSPAI-Client-Secret": "password"  # This matches the hashed secret in the policy file
     }
     
     payload = {
@@ -59,15 +59,28 @@ def test_batch_evaluate():
         "usecase": "customer_service"
     }
     
-    # Use client ID and client secret in headers
+    # Use client ID and client secret in headers with the DSPAI prefix
     headers = {
-        "X-Client-ID": "customer_service",
-        "X-Client-Secret": "customer_service_secret_123"
+        "X-DSPAI-Client-ID": "customer_service",
+        "X-DSPAI-Client-Secret": "password"  # This matches the hashed secret in the policy file
     }
     
     response = requests.post(f"{BASE_URL}/batch-evaluate", json=input_data, headers=headers)
     print("Batch Evaluate Response:", json.dumps(response.json(), indent=2))
     assert response.status_code == 200
+
+def test_generate_client_secret():
+    """Test generating a hashed client secret"""
+    payload = {
+        "client_id": "test_client",
+        "plain_secret": "test_secret"
+    }
+    
+    response = requests.post(f"{BASE_URL}/generate-client-secret", json=payload)
+    print("Generate Client Secret Response:", json.dumps(response.json(), indent=2))
+    assert response.status_code == 200
+    assert "hashed_secret" in response.json()
+    assert "salt" in response.json()
 
 if __name__ == "__main__":
     print("Testing DSP AI Control Tower OPA Policy Evaluator API")
@@ -75,6 +88,7 @@ if __name__ == "__main__":
     try:
         test_root_endpoint()
         test_list_policies()
+        test_generate_client_secret()
         test_evaluate_policy()
         test_batch_evaluate()
         print("\nAll tests passed successfully!")

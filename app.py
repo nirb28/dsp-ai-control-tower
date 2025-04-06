@@ -1,6 +1,8 @@
 import os
 import json
 import subprocess
+import hashlib
+import secrets
 from fastapi import FastAPI, HTTPException, Body, Depends, Header
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
@@ -17,34 +19,58 @@ class PolicyEvaluationResponse(BaseModel):
     allow: bool
     policy_path: str
 
+class ClientSecretRequest(BaseModel):
+    client_id: str = Field(..., description="Client ID for which to generate a secret")
+    plain_secret: str = Field(..., description="Plain text secret to hash")
+
+class ClientSecretResponse(BaseModel):
+    client_id: str
+    hashed_secret: str
+    salt: str
+
+def hash_secret(secret: str, salt: str = None) -> tuple:
+    """Hash a secret with a salt using SHA-256"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    
+    # Create a hash with the salt
+    hash_obj = hashlib.sha256((secret + salt).encode())
+    hashed_secret = hash_obj.hexdigest()
+    
+    return hashed_secret, salt
+
 async def authenticate_client(
-    x_client_id: str = Header(..., description="Client ID (policy file name)"),
-    x_client_secret: str = Header(..., description="Client secret for authentication")
+    x_dspai_client_id: str = Header(..., description="Client ID (policy file name)", alias="X-DSPAI-Client-ID"),
+    x_dspai_client_secret: str = Header(..., description="Client secret for authentication", alias="X-DSPAI-Client-Secret")
 ):
     """Authenticate client using client_id and client_secret from headers"""
     # Construct the policy path
-    policy_path = f"policies/clients/{x_client_id}.rego"
+    policy_path = f"policies/clients/{x_dspai_client_id}.rego"
     
     # Check if policy file exists
     if not os.path.exists(policy_path):
-        raise HTTPException(status_code=404, detail=f"Client ID not found: {x_client_id}")
+        raise HTTPException(status_code=404, detail=f"Client ID not found: {x_dspai_client_id}")
     
     # Read the policy file to extract the client secret
     with open(policy_path, 'r') as f:
         policy_content = f.read()
     
-    # Look for client_secret in the policy file
-    # This assumes the client secret is defined in the policy as: client_secret := "your_secret_here"
+    # Look for client_secret and salt in the policy file
     import re
-    secret_match = re.search(r'client_secret\s*:=\s*"([^"]+)"', policy_content)
+    hashed_secret_match = re.search(r'client_secret\s*:=\s*"([^"]+)"', policy_content)
+    salt_match = re.search(r'client_salt\s*:=\s*"([^"]+)"', policy_content)
     
-    if not secret_match:
-        raise HTTPException(status_code=401, detail="Client secret not defined in policy")
+    if not hashed_secret_match or not salt_match:
+        raise HTTPException(status_code=401, detail="Client secret or salt not defined in policy")
     
-    stored_secret = secret_match.group(1)
+    stored_hashed_secret = hashed_secret_match.group(1)
+    stored_salt = salt_match.group(1)
+    
+    # Hash the provided secret with the stored salt
+    provided_hashed_secret, _ = hash_secret(x_dspai_client_secret, stored_salt)
     
     # Verify the client secret
-    if x_client_secret != stored_secret:
+    if provided_hashed_secret != stored_hashed_secret:
         raise HTTPException(status_code=401, detail="Invalid client secret")
     
     return policy_path
@@ -68,6 +94,17 @@ async def list_policies():
                 policies.append(policy_path)
     
     return {"policies": policies}
+
+@app.post("/generate-client-secret", response_model=ClientSecretResponse)
+async def generate_client_secret(request: ClientSecretRequest):
+    """Generate a hashed client secret with salt"""
+    hashed_secret, salt = hash_secret(request.plain_secret)
+    
+    return {
+        "client_id": request.client_id,
+        "hashed_secret": hashed_secret,
+        "salt": salt
+    }
 
 @app.post("/evaluate", response_model=PolicyEvaluationResponse)
 async def evaluate_policy(
