@@ -4,13 +4,23 @@ import subprocess
 import hashlib
 import secrets
 from fastapi import FastAPI, HTTPException, Body, Depends, Header
-from fastapi.security import APIKeyHeader
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import uvicorn
 import re
 
-app = FastAPI(title="DSP AI Control Tower - OPA Policy Evaluator: /dspai-docs", docs_url="/dspai-docs", redoc_url=None)
+app = FastAPI(title="DSP AI Control Tower - OPA Policy Evaluator: /dspai-docs", docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/dspai-docs", include_in_schema=False)
+async def swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="FastAPI",
+        swagger_favicon_url="/static/control-tower.ico"
+    )
 
 class PolicyEvaluationRequest(BaseModel):
     input_data: Dict[str, Any] = Field(..., description="Input data to evaluate against the policy")
@@ -82,7 +92,7 @@ async def authenticate_client(
 
 @app.get("/")
 async def root():
-    return {"message": "DSP AI Control Tower - OPA Policy Evaluator API"}
+    return {"message": "DSP AI Control Tower - OPA Policy Evaluator API. Swagger: /dspai-docs"}
 
 @app.get("/policies")
 async def list_policies():
