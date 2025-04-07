@@ -36,15 +36,15 @@ roles := {
 
 # Define user IDs with their assigned roles
 user_roles := {
-	"user789": "ml_engineer",
-	"user101": "business_user",
+	"user123": "llm_admin",
+	"user456": "data_scientist",
 }
 
 # Define group IDs with their assigned roles
 group_roles := {
+	"group001": "llm_admin",
 	"group002": "data_scientist",
 	"group003": "ml_engineer",
-	"group004": "business_user",
 }
 
 # Helper function to find index of an item in an array

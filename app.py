@@ -8,8 +8,9 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import uvicorn
+import re
 
-app = FastAPI(title="DSP AI Control Tower - OPA Policy Evaluator")
+app = FastAPI(title="DSP AI Control Tower - OPA Policy Evaluator: /dspai-docs", docs_url="/dspai-docs", redoc_url=None)
 
 class PolicyEvaluationRequest(BaseModel):
     input_data: Dict[str, Any] = Field(..., description="Input data to evaluate against the policy")
@@ -27,6 +28,10 @@ class ClientSecretResponse(BaseModel):
     client_id: str
     hashed_secret: str
     salt: str
+
+class UserPoliciesRequest(BaseModel):
+    user_id: str = Field(..., description="User ID to find applicable policies for")
+    group_ids: List[str] = Field(default=[], description="Optional list of group IDs the user belongs to")
 
 def hash_secret(secret: str, salt: str = None) -> tuple:
     """Hash a secret with a salt using SHA-256"""
@@ -218,6 +223,79 @@ async def batch_evaluate_policies(
             os.remove(input_file)
     
     return {"results": results}
+
+@app.post("/user-policies")
+async def list_user_policies(request: UserPoliciesRequest):
+    """List all policies applicable to a specific user and their groups"""
+    applicable_policies = []
+    client_dir = "policies/clients"
+    
+    if not os.path.exists(client_dir):
+        return {"policies": []}
+    
+    for file in os.listdir(client_dir):
+        if file.endswith(".rego") and not file.endswith("_test.rego"):
+            policy_path = os.path.join(client_dir, file)
+            # Convert Windows path to Unix-style for consistency
+            policy_path = policy_path.replace("\\", "/")
+            
+            # Read the policy file to extract user and group roles
+            with open(policy_path, 'r') as f:
+                policy_content = f.read()
+            
+            # Check if user is directly mentioned in user_roles
+            user_match = re.search(rf'"{request.user_id}":\s*"([^"]+)"', policy_content)
+            
+            # Check if any of the user's groups are mentioned in group_roles
+            group_matches = []
+            for group_id in request.group_ids:
+                group_match = re.search(rf'"{group_id}":\s*"([^"]+)"', policy_content)
+                if group_match:
+                    group_matches.append({
+                        "group_id": group_id,
+                        "role": group_match.group(1)
+                    })
+            
+            # If either user or any group is found, add to applicable policies
+            if user_match or group_matches:
+                policy_info = {
+                    "policy_path": policy_path,
+                    "policy_name": os.path.basename(policy_path),
+                }
+                
+                if user_match:
+                    policy_info["user_role"] = user_match.group(1)
+                
+                if group_matches:
+                    policy_info["group_roles"] = group_matches
+                
+                # Extract allowed actions based on roles
+                roles_match = re.search(r'roles\s*:=\s*{([^}]+)}', policy_content, re.DOTALL)
+                if roles_match:
+                    roles_content = roles_match.group(1)
+                    policy_info["available_actions"] = {}
+                    
+                    # Extract user's direct role actions if available
+                    if user_match:
+                        user_role = user_match.group(1)
+                        role_actions_match = re.search(rf'"{user_role}":\s*\[(.*?)\]', roles_content)
+                        if role_actions_match:
+                            actions = re.findall(r'"([^"]+)"', role_actions_match.group(1))
+                            policy_info["available_actions"]["user"] = actions
+                    
+                    # Extract group role actions
+                    for group_match in group_matches:
+                        group_role = group_match["role"]
+                        role_actions_match = re.search(rf'"{group_role}":\s*\[(.*?)\]', roles_content)
+                        if role_actions_match:
+                            actions = re.findall(r'"([^"]+)"', role_actions_match.group(1))
+                            if "groups" not in policy_info["available_actions"]:
+                                policy_info["available_actions"]["groups"] = {}
+                            policy_info["available_actions"]["groups"][group_match["group_id"]] = actions
+                
+                applicable_policies.append(policy_info)
+    
+    return {"policies": applicable_policies}
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
