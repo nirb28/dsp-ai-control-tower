@@ -145,7 +145,7 @@ async def evaluate_policy(
     try:
         # Run OPA evaluation using the opa.exe executable
         cmd = [
-            "opa.exe", "eval", 
+            "opa", "eval", 
             "--data", policy_path, 
             "--input", input_file, 
             "--format", "json",
