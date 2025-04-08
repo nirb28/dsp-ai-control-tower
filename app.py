@@ -43,6 +43,16 @@ class UserPoliciesRequest(BaseModel):
     user_id: str = Field(..., description="User ID to find applicable policies for")
     group_ids: List[str] = Field(default=[], description="Optional list of group IDs the user belongs to")
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "user_id": "nbkABCD",
+                    "group_ids": ["unix_grp1", "unix_grp2"]
+                }
+            ]
+        }
+    }
 def hash_secret(secret: str, salt: str = None) -> tuple:
     """Hash a secret with a salt using SHA-256"""
     if salt is None:
