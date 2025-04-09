@@ -1,18 +1,24 @@
 package dspai.policy
-
 import rego.v1
 
+# Declare version
+version := 1
+project := "customer_service"
 # Client authentication
 # The secret is now hashed with SHA-256 and salt
 client_secret := "db4a2b9e13a5b84c2c01a95e937ae816f9065ccb03f01f6cedc1baf310fe9ec9" # Hash of "password" with the salt below
 
 client_salt := "0123456789abcdef0123456789abcdef" # Example salt
 
-# Declare version
-version := 1
-
 # Default deny all access
 default allow := false
+
+aihpc := {
+	"training_dev": {"account": "td_acct", "partition": "td_part", "num_gpu": 1, },
+	"training_prod": {"account": "td_acct", "partition": "td_part", },
+	"inference_dev": {"account": "td_acct", "partition": "td_part", "num_gpu": 1, },
+	"inference_prod": {"account": "td_acct", "partition": "td_part", },
+}
 
 # Input schema validation
 valid_input if {

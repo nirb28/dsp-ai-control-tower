@@ -1,0 +1,19 @@
+{
+  "job": {
+    "name": "{project}",
+    "account": "{aihpc.account}",
+    "partition": "{aihpc.partition}",
+    "tres_per_job": "gres/gpu:{aihpc.num_gpu}",
+    "time_limit": 480,
+    "comment": "WORKBENCH:malts,JOB_TYPE:JupyterLab, MODEL_NAME: {allowed_models}",
+    "current_working_directory": "/core/trainingdev/malts/malts_training_dev/slurm_output",
+    "environment": {
+      "NVIDIA_VISIBLE_DEVICES": "all",
+      "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
+      "PATH": "/bin:/usr/bin/:/usr/local/bin/:/core/conda/bin",
+      "LD_LIBRARY_PATH": "/lib/:/lib64/:/usr/local/lib",
+      "WORKBENCH": "malts"
+    },
+    "script": "#!/bin/bash\n bash /core/app/scripts/slurm_jupyter_script.sh\necho \"Task completed.\""
+  }
+}

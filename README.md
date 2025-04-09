@@ -111,6 +111,92 @@ Each request to the API must include both the client ID and client secret for au
   }
   ```
 
+### POST /templates/jupyter-lab
+- Generates a Jupyter Lab job template for HPC Slurm cluster based on client policy
+- Request headers:
+  - `X-DSPAI-Client-ID`: Client ID (policy file name)
+  - `X-DSPAI-Client-Secret`: Client secret for authentication
+- Request body:
+  ```json
+  {
+    "env_type": "training_dev",
+    "username": "user123",
+    "conda_env": "pytorch",
+    "port": 8888
+  }
+  ```
+- Response:
+  ```json
+  {
+    "template": {
+      "job": {
+        "name": "customer_service",
+        "account": "td_acct",
+        "partition": "td_part",
+        "tres_per_job": "gres/gpu:1",
+        "time_limit": 480,
+        "comment": "WORKBENCH:malts,JOB_TYPE:JupyterLab, MODEL_NAME: gpt-4, claude-2, llama-2-70b",
+        "current_working_directory": "/core/trainingdev/malts/malts_training_dev/slurm_output",
+        "environment": {
+          "NVIDIA_VISIBLE_DEVICES": "all",
+          "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
+          "PATH": "/bin:/usr/bin/:/usr/local/bin/:/core/conda/bin",
+          "LD_LIBRARY_PATH": "/lib/:/lib64/:/usr/local/lib",
+          "WORKBENCH": "malts"
+        },
+        "script": "#!/bin/bash\n bash /core/app/scripts/slurm_jupyter_script.sh\necho \"Task completed.\""
+      }
+    },
+    "message": "Jupyter Lab template generated successfully"
+  }
+  ```
+
+### POST /templates/model-deployment
+- Generates a Model Deployment job template for HPC Slurm cluster based on client policy
+- Request headers:
+  - `X-DSPAI-Client-ID`: Client ID (policy file name)
+  - `X-DSPAI-Client-Secret`: Client secret for authentication
+- Request body:
+  ```json
+  {
+    "env_type": "inference_dev",
+    "username": "user123",
+    "model_name": "sentiment_analysis",
+    "conda_env": "pytorch",
+    "script_path": "app.server",
+    "model_dir": "/models/sentiment",
+    "port": 8000,
+    "workers": 2
+  }
+  ```
+- Response:
+  ```json
+  {
+    "template": {
+      "job": {
+        "name": "customer_service",
+        "account": "td_acct",
+        "partition": "td_part",
+        "tres_per_job": "gres/gpu:1",
+        "time_limit": 10080,
+        "comment": "WORKBENCH:malts,JOB_TYPE:ModelDeployment, MODEL_NAME: sentiment_analysis",
+        "current_working_directory": "/home/user123/models/sentiment_analysis",
+        "environment": {
+          "NVIDIA_VISIBLE_DEVICES": "all",
+          "NVIDIA_DRIVER_CAPABILITIES": "compute,utility",
+          "PATH": "/bin:/usr/bin/:/usr/local/bin/:/core/conda/bin",
+          "LD_LIBRARY_PATH": "/lib/:/lib64/:/usr/local/lib",
+          "WORKBENCH": "malts",
+          "MODEL_PATH": "/home/user123/models/sentiment_analysis",
+          "LOG_DIR": "/home/user123/models/sentiment_analysis/logs"
+        },
+        "script": "#!/bin/bash\n source activate pytorch; python -m app.server --model-dir=/models/sentiment --port=8000 --workers=2\necho \"Model deployment completed.\""
+      }
+    },
+    "message": "Model Deployment template generated successfully"
+  }
+  ```
+
 ## Example Usage
 
 You can use curl or any HTTP client to interact with the API:
@@ -132,6 +218,40 @@ curl -X POST http://localhost:8000/evaluate \
     },
     "client_id": "customer_service",
     "client_secret": "customer_service_secret_123"
+  }'
+```
+
+## Example Usage for HPC Templates
+
+You can use curl or any HTTP client to interact with the template generation endpoints:
+
+```bash
+# Generate a Jupyter Lab template
+curl -X POST http://localhost:8000/templates/jupyter-lab \
+  -H "Content-Type: application/json" \
+  -H "X-DSPAI-Client-ID: customer_service" \
+  -H "X-DSPAI-Client-Secret: password" \
+  -d '{
+    "env_type": "training_dev",
+    "username": "user123",
+    "conda_env": "pytorch",
+    "port": 8888
+  }'
+
+# Generate a Model Deployment template
+curl -X POST http://localhost:8000/templates/model-deployment \
+  -H "Content-Type: application/json" \
+  -H "X-DSPAI-Client-ID: customer_service" \
+  -H "X-DSPAI-Client-Secret: password" \
+  -d '{
+    "env_type": "inference_dev",
+    "username": "user123",
+    "model_name": "sentiment_analysis",
+    "conda_env": "pytorch",
+    "script_path": "app.server",
+    "model_dir": "/models/sentiment",
+    "port": 8000,
+    "workers": 2
   }'
 ```
 

@@ -53,6 +53,57 @@ class UserPoliciesRequest(BaseModel):
             ]
         }
     }
+
+class JupyterLabRequest(BaseModel):
+    env_type: str = Field(..., description="Environment type to deploy to (e.g., 'training_dev', 'training_prod')")
+    username: str = Field(..., description="Username for the Jupyter Lab")
+    conda_env: str = Field(..., description="Conda environment to use")
+    port: int = Field(8888, description="Port to run Jupyter Lab on")
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "env_type": "training_dev",
+                    "username": "user123",
+                    "conda_env": "pytorch",
+                    "port": 8888
+                }
+            ]
+        }
+    }
+
+class ModelDeploymentRequest(BaseModel):
+    env_type: str = Field(..., description="Environment type to deploy to (e.g., 'inference_dev', 'inference_prod')")
+    username: str = Field(..., description="Username for the model deployment")
+    model_name: str = Field(..., description="Name of the model to deploy")
+    conda_env: str = Field(..., description="Conda environment to use")
+    script_path: str = Field(..., description="Path to the deployment script")
+    model_dir: str = Field(..., description="Directory containing the model files")
+    port: int = Field(8000, description="Port to run the model server on")
+    workers: int = Field(2, description="Number of workers for the model server")
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "env_type": "inference_dev",
+                    "username": "user123",
+                    "model_name": "sentiment_analysis",
+                    "conda_env": "pytorch",
+                    "script_path": "app.server",
+                    "model_dir": "/models/sentiment",
+                    "port": 8000,
+                    "workers": 2
+                }
+            ]
+        }
+    }
+
+class HpcTemplateResponse(BaseModel):
+    template: Dict[str, Any]
+    message: str
+
 def hash_secret(secret: str, salt: str = None) -> tuple:
     """Hash a secret with a salt using SHA-256"""
     if salt is None:
@@ -316,6 +367,177 @@ async def list_user_policies(request: UserPoliciesRequest):
                 applicable_policies.append(policy_info)
     
     return {"policies": applicable_policies}
+
+def load_template(template_name: str) -> Dict[str, Any]:
+    """Load a template from the templates directory"""
+    template_path = os.path.join("templates", f"{template_name}.json")
+    
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=404, detail=f"Template not found: {template_name}")
+    
+    try:
+        with open(template_path, 'r') as f:
+            template = json.load(f)
+        return template
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading template: {str(e)}")
+
+@app.post("/templates/jupyter-lab", response_model=HpcTemplateResponse)
+async def generate_jupyter_lab_template(
+    request: JupyterLabRequest,
+    policy_path: str = Depends(authenticate_client)
+):
+    """Generate a Jupyter Lab job template for HPC Slurm cluster"""
+    # Load the template
+    template = load_template("jupyter_lab")
+    
+    # Extract policy information
+    with open(policy_path, 'r') as f:
+        policy_content = f.read()
+    
+    # Extract project name from policy
+    project_match = re.search(r'project\s*:=\s*"([^"]+)"', policy_content)
+    if project_match:
+        project = project_match.group(1)
+    else:
+        # Use policy filename as project if not explicitly defined
+        project = os.path.basename(policy_path).replace(".rego", "")
+    
+    # Extract allowed models if available
+    allowed_models = []
+    allowed_models_match = re.search(r'allowed_models\s*:=\s*\[(.*?)\]', policy_content, re.DOTALL)
+    if allowed_models_match:
+        models_str = allowed_models_match.group(1)
+        allowed_models = [m.strip('"') for m in re.findall(r'"([^"]+)"', models_str)]
+    
+    # Extract aihpc configuration for the specified environment
+    aihpc_match = re.search(r'aihpc\s*:=\s*({[^}]+})', policy_content, re.DOTALL)
+    if not aihpc_match:
+        raise HTTPException(status_code=400, detail="AIHPC configuration not defined in policy")
+    
+    # Extract the specific environment configuration
+    env_match = re.search(rf'"{request.env_type}"\s*:\s*({{\s*.*?}})', aihpc_match.group(1), re.DOTALL)
+    if not env_match:
+        raise HTTPException(status_code=400, detail=f"Environment type not defined: {request.env_type}")
+    
+    env_config = env_match.group(1)
+    
+    # Extract account
+    account_match = re.search(r'"account"\s*:\s*"([^"]+)"', env_config)
+    if not account_match:
+        raise HTTPException(status_code=400, detail=f"Account not defined for environment: {request.env_type}")
+    account = account_match.group(1)
+    
+    # Extract partition
+    partition_match = re.search(r'"partition"\s*:\s*"([^"]+)"', env_config)
+    if not partition_match:
+        raise HTTPException(status_code=400, detail=f"Partition not defined for environment: {request.env_type}")
+    partition = partition_match.group(1)
+    
+    # Extract num_gpu if available
+    num_gpu = "1"  # Default value
+    num_gpu_match = re.search(r'"num_gpu"\s*:\s*(\d+)', env_config)
+    if num_gpu_match:
+        num_gpu = num_gpu_match.group(1)
+    
+    # Replace placeholders in the template
+    template_str = json.dumps(template)
+    template_str = template_str.replace("{project}", project)
+    template_str = template_str.replace("{aihpc.account}", account)
+    template_str = template_str.replace("{aihpc.partition}", partition)
+    template_str = template_str.replace("{aihpc.num_gpu}", num_gpu)
+    
+    # Replace allowed_models if available
+    if allowed_models:
+        template_str = template_str.replace("{allowed_models}", ", ".join(allowed_models))
+    else:
+        template_str = template_str.replace("{allowed_models}", "")
+    
+    # Replace user-specific values
+    template_str = template_str.replace("{username}", request.username)
+    template_str = template_str.replace("{conda_env}", request.conda_env)
+    template_str = template_str.replace("{port}", str(request.port))
+    
+    # Convert back to dictionary
+    filled_template = json.loads(template_str)
+    
+    return {
+        "template": filled_template,
+        "message": "Jupyter Lab template generated successfully"
+    }
+
+@app.post("/templates/model-deployment", response_model=HpcTemplateResponse)
+async def generate_model_deployment_template(
+    request: ModelDeploymentRequest,
+    policy_path: str = Depends(authenticate_client)
+):
+    """Generate a Model Deployment job template for HPC Slurm cluster"""
+    # Load the template
+    template = load_template("model_deployment")
+    
+    # Extract policy information
+    with open(policy_path, 'r') as f:
+        policy_content = f.read()
+    
+    # Extract project name from policy
+    project_match = re.search(r'project\s*:=\s*"([^"]+)"', policy_content)
+    if project_match:
+        project = project_match.group(1)
+    else:
+        # Use policy filename as project if not explicitly defined
+        project = os.path.basename(policy_path).replace(".rego", "")
+    
+    # Extract aihpc configuration for the specified environment
+    aihpc_match = re.search(r'aihpc\s*:=\s*({[^}]+})', policy_content, re.DOTALL)
+    if not aihpc_match:
+        raise HTTPException(status_code=400, detail="AIHPC configuration not defined in policy")
+    
+    # Extract the specific environment configuration
+    env_match = re.search(rf'"{request.env_type}"\s*:\s*({{\s*.*?}})', aihpc_match.group(1), re.DOTALL)
+    if not env_match:
+        raise HTTPException(status_code=400, detail=f"Environment type not defined: {request.env_type}")
+    
+    env_config = env_match.group(1)
+    
+    # Extract account
+    account_match = re.search(r'"account"\s*:\s*"([^"]+)"', env_config)
+    if not account_match:
+        raise HTTPException(status_code=400, detail=f"Account not defined for environment: {request.env_type}")
+    account = account_match.group(1)
+    
+    # Extract partition
+    partition_match = re.search(r'"partition"\s*:\s*"([^"]+)"', env_config)
+    if not partition_match:
+        raise HTTPException(status_code=400, detail=f"Partition not defined for environment: {request.env_type}")
+    partition = partition_match.group(1)
+    
+    # Extract num_gpu if available
+    num_gpu = "1"  # Default value
+    num_gpu_match = re.search(r'"num_gpu"\s*:\s*(\d+)', env_config)
+    if num_gpu_match:
+        num_gpu = num_gpu_match.group(1)
+    
+    # Replace placeholders in the template
+    template_str = json.dumps(template)
+    template_str = template_str.replace("{project}", project)
+    template_str = template_str.replace("{aihpc.account}", account)
+    template_str = template_str.replace("{aihpc.partition}", partition)
+    template_str = template_str.replace("{aihpc.num_gpu}", num_gpu)
+    
+    # Replace user-specific values
+    template_str = template_str.replace("model_name", request.model_name)
+    template_str = template_str.replace("/home", f"/home/{request.username}/models/{request.model_name}")
+    template_str = template_str.replace("/home/models/", f"/home/{request.username}/models/{request.model_name}")
+    template_str = template_str.replace("/home/models/logs", f"/home/{request.username}/models/{request.model_name}/logs")
+    template_str = template_str.replace("source activate", f"source activate {request.conda_env}; python -m {request.script_path} --model-dir={request.model_dir} --port={request.port} --workers={request.workers}")
+    
+    # Convert back to dictionary
+    filled_template = json.loads(template_str)
+    
+    return {
+        "template": filled_template,
+        "message": "Model Deployment template generated successfully"
+    }
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
