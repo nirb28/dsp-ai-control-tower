@@ -111,12 +111,16 @@ class HpcTemplateResponse(BaseModel):
 def extract_aihpc_config(policy_content: str, aihpc_env: str, aihpc_lane: str) -> Dict[str, str]:
     """Extract AIHPC configuration from policy content for a specific environment and lane"""
     # Extract aihpc configuration for the specified environment
-    aihpc_match = re.search(r'aihpc\.' + aihpc_env + r'\s*:=\s*({[^}]+})', policy_content, re.DOTALL)
+    aihpc_match = re.search(r'aihpc\.' + aihpc_env + r'\s*:=\s*({.*?})\s*$', policy_content, re.DOTALL | re.MULTILINE)
     if not aihpc_match:
         raise HTTPException(status_code=400, detail=f"AIHPC configuration not defined for environment: {aihpc_env}")
     
     # Extract the specific environment configuration
-    env_match = re.search(rf'"{aihpc_lane}"\s*:\s*({{.*?}})', aihpc_match.group(1), re.DOTALL)
+    # Modified regex to properly handle nested braces and find the specific lane
+    env_config_str = aihpc_match.group(1)
+    lane_pattern = rf'"{aihpc_lane}"\s*:\s*({{\s*"[^"]+"\s*:\s*"[^"]+"\s*,\s*"[^"]+"\s*:\s*"[^"]+"\s*,\s*"[^"]+"\s*:\s*\d+\s*,\s*.*?}})'
+    env_match = re.search(lane_pattern, env_config_str, re.DOTALL)
+    
     if not env_match:
         raise HTTPException(status_code=400, detail=f"Environment type not defined: {aihpc_lane}")
     
