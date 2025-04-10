@@ -55,26 +55,28 @@ class UserPoliciesRequest(BaseModel):
     }
 
 class JupyterLabRequest(BaseModel):
-    env_type: str = Field(..., description="Environment type to deploy to (e.g., 'training_dev', 'training_prod')")
+    aihpc_lane: str = Field(..., description="Environment type to deploy to (e.g., 'training_dev', 'training_prod')")
     username: str = Field(..., description="Username for the Jupyter Lab")
     conda_env: str = Field(..., description="Conda environment to use")
     port: int = Field(8888, description="Port to run Jupyter Lab on")
+    aihpc_env: str = Field("dev", description="AIHPC environment to use (e.g., 'dev', 'prod')")
     
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "env_type": "training_dev",
+                    "aihpc_lane": "training_dev",
                     "username": "user123",
                     "conda_env": "pytorch",
-                    "port": 8888
+                    "port": 8888,
+                    "aihpc_env": "dev"
                 }
             ]
         }
     }
 
 class ModelDeploymentRequest(BaseModel):
-    env_type: str = Field(..., description="Environment type to deploy to (e.g., 'inference_dev', 'inference_prod')")
+    aihpc_lane: str = Field(..., description="Environment type to deploy to (e.g., 'inference_dev', 'inference_prod')")
     username: str = Field(..., description="Username for the model deployment")
     model_name: str = Field(..., description="Name of the model to deploy")
     conda_env: str = Field(..., description="Conda environment to use")
@@ -82,19 +84,21 @@ class ModelDeploymentRequest(BaseModel):
     model_dir: str = Field(..., description="Directory containing the model files")
     port: int = Field(8000, description="Port to run the model server on")
     workers: int = Field(2, description="Number of workers for the model server")
+    aihpc_env: str = Field("dev", description="AIHPC environment to use (e.g., 'dev', 'prod')")
     
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "env_type": "inference_dev",
+                    "aihpc_lane": "inference_dev",
                     "username": "user123",
                     "model_name": "sentiment_analysis",
                     "conda_env": "pytorch",
                     "script_path": "app.server",
                     "model_dir": "/models/sentiment",
                     "port": 8000,
-                    "workers": 2
+                    "workers": 2,
+                    "aihpc_env": "dev"
                 }
             ]
         }
@@ -103,6 +107,45 @@ class ModelDeploymentRequest(BaseModel):
 class HpcTemplateResponse(BaseModel):
     template: Dict[str, Any]
     message: str
+
+def extract_aihpc_config(policy_content: str, aihpc_env: str, aihpc_lane: str) -> Dict[str, str]:
+    """Extract AIHPC configuration from policy content for a specific environment and lane"""
+    # Extract aihpc configuration for the specified environment
+    aihpc_match = re.search(r'aihpc\.' + aihpc_env + r'\s*:=\s*({[^}]+})', policy_content, re.DOTALL)
+    if not aihpc_match:
+        raise HTTPException(status_code=400, detail=f"AIHPC configuration not defined for environment: {aihpc_env}")
+    
+    # Extract the specific environment configuration
+    env_match = re.search(rf'"{aihpc_lane}"\s*:\s*({{.*?}})', aihpc_match.group(1), re.DOTALL)
+    if not env_match:
+        raise HTTPException(status_code=400, detail=f"Environment type not defined: {aihpc_lane}")
+    
+    env_config = env_match.group(1)
+    
+    # Define the configuration fields to extract with their default values
+    config_fields = {
+        "account": None,
+        "partition": None,
+        "num_gpu": "1"  # Default value
+    }
+    
+    # Extract each field from the environment configuration
+    for field, default in config_fields.items():
+        if field == "num_gpu":
+            # Special case for num_gpu which is a number
+            match = re.search(rf'"{field}"\s*:\s*(\d+)', env_config)
+            if match:
+                config_fields[field] = match.group(1)
+        else:
+            # For string fields
+            match = re.search(rf'"{field}"\s*:\s*"([^"]+)"', env_config)
+            if match:
+                config_fields[field] = match.group(1)
+            elif default is None:
+                # Required field is missing
+                raise HTTPException(status_code=400, detail=f"{field.capitalize()} not defined for environment: {aihpc_lane}")
+    
+    return config_fields
 
 def hash_secret(secret: str, salt: str = None) -> tuple:
     """Hash a secret with a salt using SHA-256"""
@@ -410,42 +453,15 @@ async def generate_jupyter_lab_template(
         models_str = allowed_models_match.group(1)
         allowed_models = [m.strip('"') for m in re.findall(r'"([^"]+)"', models_str)]
     
-    # Extract aihpc configuration for the specified environment
-    aihpc_match = re.search(r'aihpc\s*:=\s*({[^}]+})', policy_content, re.DOTALL)
-    if not aihpc_match:
-        raise HTTPException(status_code=400, detail="AIHPC configuration not defined in policy")
-    
-    # Extract the specific environment configuration
-    env_match = re.search(rf'"{request.env_type}"\s*:\s*({{\s*.*?}})', aihpc_match.group(1), re.DOTALL)
-    if not env_match:
-        raise HTTPException(status_code=400, detail=f"Environment type not defined: {request.env_type}")
-    
-    env_config = env_match.group(1)
-    
-    # Extract account
-    account_match = re.search(r'"account"\s*:\s*"([^"]+)"', env_config)
-    if not account_match:
-        raise HTTPException(status_code=400, detail=f"Account not defined for environment: {request.env_type}")
-    account = account_match.group(1)
-    
-    # Extract partition
-    partition_match = re.search(r'"partition"\s*:\s*"([^"]+)"', env_config)
-    if not partition_match:
-        raise HTTPException(status_code=400, detail=f"Partition not defined for environment: {request.env_type}")
-    partition = partition_match.group(1)
-    
-    # Extract num_gpu if available
-    num_gpu = "1"  # Default value
-    num_gpu_match = re.search(r'"num_gpu"\s*:\s*(\d+)', env_config)
-    if num_gpu_match:
-        num_gpu = num_gpu_match.group(1)
+    # Extract AIHPC configuration
+    aihpc_config = extract_aihpc_config(policy_content, request.aihpc_env, request.aihpc_lane)
     
     # Replace placeholders in the template
     template_str = json.dumps(template)
     template_str = template_str.replace("{project}", project)
-    template_str = template_str.replace("{aihpc.account}", account)
-    template_str = template_str.replace("{aihpc.partition}", partition)
-    template_str = template_str.replace("{aihpc.num_gpu}", num_gpu)
+    template_str = template_str.replace("{aihpc.account}", aihpc_config["account"])
+    template_str = template_str.replace("{aihpc.partition}", aihpc_config["partition"])
+    template_str = template_str.replace("{aihpc.num_gpu}", aihpc_config["num_gpu"])
     
     # Replace allowed_models if available
     if allowed_models:
@@ -487,42 +503,15 @@ async def generate_model_deployment_template(
         # Use policy filename as project if not explicitly defined
         project = os.path.basename(policy_path).replace(".rego", "")
     
-    # Extract aihpc configuration for the specified environment
-    aihpc_match = re.search(r'aihpc\s*:=\s*({[^}]+})', policy_content, re.DOTALL)
-    if not aihpc_match:
-        raise HTTPException(status_code=400, detail="AIHPC configuration not defined in policy")
-    
-    # Extract the specific environment configuration
-    env_match = re.search(rf'"{request.env_type}"\s*:\s*({{\s*.*?}})', aihpc_match.group(1), re.DOTALL)
-    if not env_match:
-        raise HTTPException(status_code=400, detail=f"Environment type not defined: {request.env_type}")
-    
-    env_config = env_match.group(1)
-    
-    # Extract account
-    account_match = re.search(r'"account"\s*:\s*"([^"]+)"', env_config)
-    if not account_match:
-        raise HTTPException(status_code=400, detail=f"Account not defined for environment: {request.env_type}")
-    account = account_match.group(1)
-    
-    # Extract partition
-    partition_match = re.search(r'"partition"\s*:\s*"([^"]+)"', env_config)
-    if not partition_match:
-        raise HTTPException(status_code=400, detail=f"Partition not defined for environment: {request.env_type}")
-    partition = partition_match.group(1)
-    
-    # Extract num_gpu if available
-    num_gpu = "1"  # Default value
-    num_gpu_match = re.search(r'"num_gpu"\s*:\s*(\d+)', env_config)
-    if num_gpu_match:
-        num_gpu = num_gpu_match.group(1)
+    # Extract AIHPC configuration
+    aihpc_config = extract_aihpc_config(policy_content, request.aihpc_env, request.aihpc_lane)
     
     # Replace placeholders in the template
     template_str = json.dumps(template)
     template_str = template_str.replace("{project}", project)
-    template_str = template_str.replace("{aihpc.account}", account)
-    template_str = template_str.replace("{aihpc.partition}", partition)
-    template_str = template_str.replace("{aihpc.num_gpu}", num_gpu)
+    template_str = template_str.replace("{aihpc.account}", aihpc_config["account"])
+    template_str = template_str.replace("{aihpc.partition}", aihpc_config["partition"])
+    template_str = template_str.replace("{aihpc.num_gpu}", aihpc_config["num_gpu"])
     
     # Replace user-specific values
     template_str = template_str.replace("model_name", request.model_name)

@@ -13,11 +13,30 @@ client_salt := "0123456789abcdef0123456789abcdef" # Example salt
 # Default deny all access
 default allow := false
 
-aihpc := {
-	"training_dev": {"account": "td_acct", "partition": "td_part", "num_gpu": 1, },
-	"training_prod": {"account": "td_acct", "partition": "td_part", },
-	"inference_dev": {"account": "td_acct", "partition": "td_part", "num_gpu": 1, },
-	"inference_prod": {"account": "td_acct", "partition": "td_part", },
+aihpc.dev := { 
+	"training_dev": {"account": "malts_training_dev", "partition": "model_training_dev", "num_gpu": 8, "time": 5, 
+		"cwd": "/core/trainingdev/malts/malts_training_dev/slurm_output", "script"="/core/app/scripts/slurm_jupyter_script.sh"}, 
+	"training_prod": {"account": "malts_training_prod", "partition": "model_training_prod", "num_gpu": 8, "time": 5, 
+		"cwd": "/core/trainingprod/malts/malts_training_dev/slurm_output", "script"="/core/app/scripts/slurm_jupyter_script.sh"}, 
+	"inference_dev": {"account": "malts_inference_dev", "partition": "inference_dev", "num_gpu": 8, "time": 5, 
+		"cwd": "/core/inferencedevlogs/malts/malts_training_dev/slurm_output", "script"="/core/app/scripts/slurm_triton_dev.sh", 
+		"model_name"=""}, 
+	"inference_prod": {"account": "malts_inference_prod", "partition": "inference_prod", "num_gpu": 8, "time": 5, 
+		"cwd": "/core/inferenceprodlogs/malts/malts_training_dev/slurm_output", "script"="/core/app/scripts/slurm_triton_prod.sh", 
+		"model_name"=""}, 
+} 
+
+aihpc.prod := { 
+	"training_dev": {"account": "malts_training_dev", "partition": "model_training_dev", "num_gpu": 8, "time": 480, 
+		"cwd": "/trainingdev/malts/malts_training_dev/slurm_output", "script"="/app/scripts/slurm_jupyter_script.sh"}, 
+	"training_prod": {"account": "malts_training_prod", "partition": "model_training_prod", "num_gpu": 8, "time": 480, 
+		"cwd": "/trainingprod/malts/malts_training_dev/slurm_output", "script"="/app/scripts/slurm_jupyter_script.sh"}, 
+	"inference_dev": {"account": "malts_inference_dev", "partition": "inference_dev", "num_gpu": 8, "time": 480, 
+		"cwd": "/inferencedevlogs/malts/malts_training_dev/slurm_output", "script"="/app/scripts/slurm_triton_dev.sh", 
+		"model_name"=""}, 
+	"inference_prod": {"account": "malts_inference_prod", "partition": "inference_prod", "num_gpu": 8, "time": 480, 
+		"cwd": "/inferenceprodlogs/malts/malts_training_dev/slurm_output", "script"="/app/scripts/slurm_triton_prod.sh", 
+		"model_name"=""}, 
 }
 
 # Input schema validation
