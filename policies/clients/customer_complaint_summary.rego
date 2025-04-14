@@ -1,6 +1,9 @@
 package dspai.policy
 import rego.v1
 
+# Policy status - controls whether this policy is active
+policy_enabled := true
+
 
 # Declare version
 version := 1
