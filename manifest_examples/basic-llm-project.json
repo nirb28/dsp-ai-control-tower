@@ -1,0 +1,71 @@
+{
+  "project_id": "basic-llm-project",
+  "project_name": "Basic LLM Development Project",
+  "version": "1.0.0",
+  "description": "Simple LLM project for development and testing",
+  "owner": "developer@company.com",
+  "team": ["developer@company.com"],
+  "tags": ["llm", "development", "poc"],
+  "environment": "development",
+  "created_at": "2024-03-01T09:00:00Z",
+  "updated_at": "2024-03-01T09:00:00Z",
+  "modules": [
+    {
+      "module_type": "jwt_config",
+      "name": "simple-auth",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Basic JWT authentication",
+      "dependencies": [],
+      "config": {
+        "secret_key": "dev-secret-key-change-in-prod",
+        "algorithm": "HS256",
+        "expiration_minutes": 30,
+        "issuer": "basic-llm-dev",
+        "audience": "dev-users",
+        "refresh_token_enabled": false
+      }
+    },
+    {
+      "module_type": "inference_endpoint",
+      "name": "llm-chat",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Basic LLM inference for chat",
+      "dependencies": ["simple-auth"],
+      "config": {
+        "model_name": "gpt-3.5-turbo",
+        "model_version": "latest",
+        "endpoint_url": "https://api.openai.com/v1/chat/completions",
+        "system_prompt": "You are a helpful assistant. Be concise and accurate in your responses.",
+        "max_tokens": 150,
+        "temperature": 0.7,
+        "top_p": 1.0,
+        "batch_size": 1
+      }
+    },
+    {
+      "module_type": "monitoring",
+      "name": "basic-logging",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Simple logging and monitoring",
+      "dependencies": [],
+      "config": {
+        "metrics_enabled": true,
+        "logging_level": "DEBUG",
+        "tracing_enabled": false,
+        "health_check_interval": 60,
+        "alerting_enabled": false,
+        "dashboard_url": null
+      }
+    }
+  ],
+  "metadata": {
+    "cost_center": "DEV-001",
+    "business_unit": "R&D",
+    "compliance_level": "low",
+    "data_classification": "internal",
+    "support_contact": "dev-team@company.com"
+  }
+}

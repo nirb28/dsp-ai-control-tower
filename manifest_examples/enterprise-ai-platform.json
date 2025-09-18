@@ -1,0 +1,310 @@
+{
+  "project_id": "enterprise-ai-platform",
+  "project_name": "Enterprise AI Platform",
+  "version": "2.0.0",
+  "description": "Full-scale enterprise AI platform with comprehensive module suite",
+  "owner": "ai-platform-team@enterprise.com",
+  "team": [
+    "platform-lead@enterprise.com",
+    "ai-architect@enterprise.com",
+    "devops-engineer@enterprise.com",
+    "security-officer@enterprise.com",
+    "data-engineer@enterprise.com"
+  ],
+  "tags": ["enterprise", "ai-platform", "production", "multi-tenant", "scalable"],
+  "environment": "production",
+  "created_at": "2023-08-01T08:00:00Z",
+  "updated_at": "2024-03-01T16:30:00Z",
+  "modules": [
+    {
+      "module_type": "jwt_config",
+      "name": "enterprise-auth",
+      "version": "2.1.0",
+      "status": "enabled",
+      "description": "Enterprise-grade JWT authentication with SSO integration",
+      "dependencies": [],
+      "config": {
+        "secret_key": "${ENTERPRISE_JWT_SECRET}",
+        "algorithm": "RS256",
+        "expiration_minutes": 120,
+        "issuer": "enterprise-ai-platform",
+        "audience": "enterprise-users",
+        "refresh_token_enabled": true
+      }
+    },
+    {
+      "module_type": "rag_config",
+      "name": "enterprise-rag",
+      "version": "3.0.0",
+      "status": "enabled",
+      "description": "High-performance RAG system with knowledge graph integration",
+      "dependencies": ["enterprise-auth", "data-pipeline"],
+      "config": {
+        "vector_store_type": "neo4j_knowledge_graph",
+        "embedding_model": "text-embedding-ada-002",
+        "chunk_size": 1024,
+        "chunk_overlap": 100,
+        "retrieval_k": 20,
+        "reranker_enabled": true,
+        "query_expansion_enabled": true
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "enterprise-gateway",
+      "version": "2.5.0",
+      "status": "enabled",
+      "description": "High-availability API gateway with advanced routing",
+      "dependencies": ["enterprise-auth"],
+      "config": {
+        "rate_limiting": {
+          "per_second": 50,
+          "per_minute": 2000,
+          "per_hour": 50000,
+          "burst": 100
+        },
+        "cors_origins": [
+          "https://*.enterprise.com",
+          "https://partner-portal.enterprise.com"
+        ],
+        "authentication_required": true,
+        "api_versioning": "v3",
+        "request_timeout": 60,
+        "load_balancing_strategy": "least_connections"
+      }
+    },
+    {
+      "module_type": "inference_endpoint",
+      "name": "multi-model-inference",
+      "version": "2.2.0",
+      "status": "enabled",
+      "description": "Multi-model inference with load balancing and fallbacks",
+      "dependencies": ["enterprise-rag", "enterprise-gateway", "model-management"],
+      "config": {
+        "model_name": "gpt-4-turbo",
+        "model_version": "2024-03-01",
+        "endpoint_url": "https://inference.enterprise.com/v3/chat/completions",
+        "system_prompt": "You are an enterprise AI assistant with access to comprehensive knowledge bases. Provide accurate, professional, and contextually relevant responses. Always maintain confidentiality and follow enterprise policies. Cite sources when possible and escalate complex queries appropriately.",
+        "max_tokens": 2048,
+        "temperature": 0.3,
+        "top_p": 0.8,
+        "batch_size": 4
+      }
+    },
+    {
+      "module_type": "security",
+      "name": "enterprise-security",
+      "version": "2.0.0",
+      "status": "enabled",
+      "description": "Comprehensive security framework with zero-trust architecture",
+      "dependencies": ["enterprise-auth"],
+      "config": {
+        "encryption_at_rest": true,
+        "encryption_in_transit": true,
+        "vulnerability_scanning": true,
+        "access_control_type": "abac",
+        "audit_logging": true,
+        "compliance_standards": ["SOC2", "ISO27001", "HIPAA", "GDPR", "FedRAMP"]
+      }
+    },
+    {
+      "module_type": "monitoring",
+      "name": "enterprise-observability",
+      "version": "2.3.0",
+      "status": "enabled",
+      "description": "Full-stack observability with AI-powered analytics",
+      "dependencies": ["enterprise-gateway"],
+      "config": {
+        "metrics_enabled": true,
+        "logging_level": "INFO",
+        "tracing_enabled": true,
+        "health_check_interval": 15,
+        "alerting_enabled": true,
+        "dashboard_url": "https://observability.enterprise.com/ai-platform"
+      }
+    },
+    {
+      "module_type": "model_registry",
+      "name": "model-management",
+      "version": "2.1.0",
+      "status": "enabled",
+      "description": "Enterprise model registry with governance and lineage",
+      "dependencies": ["enterprise-security"],
+      "config": {
+        "registry_type": "mlflow",
+        "registry_url": "https://mlflow.enterprise.com",
+        "auto_versioning": true,
+        "model_validation": true,
+        "metadata_tracking": true,
+        "experiment_tracking": true
+      }
+    },
+    {
+      "module_type": "data_pipeline",
+      "name": "data-processing",
+      "version": "3.0.0",
+      "status": "enabled",
+      "description": "Scalable data pipeline for AI workloads",
+      "dependencies": ["enterprise-security", "resource-management"],
+      "config": {
+        "pipeline_type": "hybrid",
+        "data_sources": ["s3://enterprise-data", "postgresql://data-warehouse", "kafka://events"],
+        "data_sinks": ["neo4j://knowledge-graph", "elasticsearch://search", "s3://processed-data"],
+        "processing_engine": "spark",
+        "schedule": "0 */6 * * *",
+        "data_quality_checks": true
+      }
+    },
+    {
+      "module_type": "deployment",
+      "name": "kubernetes-deployment",
+      "version": "2.0.0",
+      "status": "enabled",
+      "description": "Kubernetes-based deployment with GitOps",
+      "dependencies": ["resource-management"],
+      "config": {
+        "deployment_strategy": "canary",
+        "container_registry": "registry.enterprise.com/ai-platform",
+        "orchestration_platform": "kubernetes",
+        "auto_scaling": true,
+        "rollback_enabled": true,
+        "environment_configs": {
+          "production": {
+            "replicas": 10,
+            "cpu_requests": "2",
+            "memory_requests": "4Gi",
+            "cpu_limits": "4",
+            "memory_limits": "8Gi"
+          },
+          "staging": {
+            "replicas": 3,
+            "cpu_requests": "1",
+            "memory_requests": "2Gi",
+            "cpu_limits": "2",
+            "memory_limits": "4Gi"
+          }
+        }
+      }
+    },
+    {
+      "module_type": "resource_management",
+      "name": "cloud-resources",
+      "version": "2.2.0",
+      "status": "enabled",
+      "description": "Multi-cloud resource management with cost optimization",
+      "dependencies": ["enterprise-security"],
+      "config": {
+        "compute_resources": {
+          "gpu_instances": "8x A100",
+          "cpu_instances": "20x c5.4xlarge",
+          "inference_nodes": "5x g4dn.xlarge"
+        },
+        "storage_resources": {
+          "vector_db": "1TB SSD",
+          "knowledge_graph": "500GB NVMe",
+          "data_lake": "10TB S3"
+        },
+        "network_resources": {
+          "bandwidth": "10Gbps",
+          "cdn": "global",
+          "vpc": "multi-az"
+        },
+        "auto_scaling_policies": {
+          "cpu_threshold": 70,
+          "memory_threshold": 80,
+          "scale_out_cooldown": 300,
+          "scale_in_cooldown": 600
+        },
+        "cost_optimization": true,
+        "resource_quotas": {
+          "max_cpu": "1000 vCPU",
+          "max_memory": "2TB",
+          "max_storage": "50TB"
+        }
+      }
+    },
+    {
+      "module_type": "notifications",
+      "name": "enterprise-alerts",
+      "version": "2.0.0",
+      "status": "enabled",
+      "description": "Multi-channel notification system with intelligent routing",
+      "dependencies": ["enterprise-observability"],
+      "config": {
+        "email_enabled": true,
+        "slack_enabled": true,
+        "webhook_enabled": true,
+        "notification_channels": {
+          "email": "ai-platform-alerts@enterprise.com",
+          "slack": "#ai-platform-ops",
+          "webhook": "https://webhook.enterprise.com/alerts",
+          "pagerduty": "https://events.pagerduty.com/v2/enqueue"
+        },
+        "alert_rules": [
+          {
+            "name": "critical_system_failure",
+            "condition": "error_rate > 10% OR availability < 99%",
+            "severity": "critical"
+          },
+          {
+            "name": "high_resource_usage",
+            "condition": "cpu_usage > 85% OR memory_usage > 90%",
+            "severity": "high"
+          },
+          {
+            "name": "model_performance_degradation",
+            "condition": "accuracy < 90% OR latency > 5s",
+            "severity": "medium"
+          }
+        ],
+        "escalation_policies": [
+          {
+            "level": 1,
+            "delay_minutes": 0,
+            "channels": ["slack"]
+          },
+          {
+            "level": 2,
+            "delay_minutes": 5,
+            "channels": ["email", "slack"]
+          },
+          {
+            "level": 3,
+            "delay_minutes": 15,
+            "channels": ["pagerduty"]
+          }
+        ]
+      }
+    },
+    {
+      "module_type": "backup_recovery",
+      "name": "enterprise-dr",
+      "version": "2.1.0",
+      "status": "enabled",
+      "description": "Enterprise disaster recovery with multi-region replication",
+      "dependencies": ["cloud-resources"],
+      "config": {
+        "backup_enabled": true,
+        "backup_frequency": "hourly",
+        "retention_policy": "1y",
+        "disaster_recovery_enabled": true,
+        "backup_storage_type": "multi-region-cloud",
+        "restore_testing": true
+      }
+    }
+  ],
+  "metadata": {
+    "cost_center": "ENTERPRISE-AI-001",
+    "business_unit": "AI Innovation",
+    "compliance_level": "critical",
+    "data_classification": "confidential",
+    "support_contact": "ai-platform-team@enterprise.com",
+    "documentation_url": "https://docs.enterprise.com/ai-platform",
+    "deployment_regions": ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"],
+    "sla_tier": "platinum",
+    "budget_allocation": "$500000/year",
+    "disaster_recovery_rpo": "1h",
+    "disaster_recovery_rto": "4h",
+    "security_contact": "security-team@enterprise.com"
+  }
+}

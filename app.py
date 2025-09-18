@@ -7,7 +7,9 @@ from fastapi import FastAPI, HTTPException, Body, Depends, Header
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
+from datetime import datetime
+from enum import Enum
 import uvicorn
 import re
 from config import SUPERUSER_SECRET_HASH, SUPERUSER_SALT
@@ -127,6 +129,258 @@ class PolicyRequest(BaseModel):
 
 class PolicyStatusRequest(BaseModel):
     enabled: bool = Field(..., description="Whether the policy should be enabled or disabled")
+
+# ==================== PROJECT MANIFEST MODELS ====================
+
+class ModuleType(str, Enum):
+    JWT_CONFIG = "jwt_config"
+    RAG_CONFIG = "rag_config"
+    API_GATEWAY = "api_gateway"
+    INFERENCE_ENDPOINT = "inference_endpoint"
+    SECURITY = "security"
+    MONITORING = "monitoring"
+    MODEL_REGISTRY = "model_registry"
+    DATA_PIPELINE = "data_pipeline"
+    DEPLOYMENT = "deployment"
+    RESOURCE_MANAGEMENT = "resource_management"
+    NOTIFICATIONS = "notifications"
+    BACKUP_RECOVERY = "backup_recovery"
+
+class ModuleStatus(str, Enum):
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    DEPRECATED = "deprecated"
+    DEVELOPMENT = "development"
+
+class JWTConfigModule(BaseModel):
+    secret_key: str = Field(..., description="JWT secret key")
+    algorithm: str = Field(default="HS256", description="JWT signing algorithm")
+    expiration_minutes: int = Field(default=30, description="Token expiration time in minutes")
+    issuer: Optional[str] = Field(None, description="JWT issuer")
+    audience: Optional[str] = Field(None, description="JWT audience")
+    refresh_token_enabled: bool = Field(default=True, description="Enable refresh tokens")
+    
+class RAGConfigModule(BaseModel):
+    vector_store_type: str = Field(..., description="Type of vector store (faiss, pinecone, etc.)")
+    embedding_model: str = Field(..., description="Embedding model name")
+    chunk_size: int = Field(default=512, description="Document chunk size")
+    chunk_overlap: int = Field(default=50, description="Chunk overlap size")
+    retrieval_k: int = Field(default=5, description="Number of documents to retrieve")
+    reranker_enabled: bool = Field(default=False, description="Enable reranking")
+    query_expansion_enabled: bool = Field(default=False, description="Enable query expansion")
+    
+class APIGatewayModule(BaseModel):
+    rate_limiting: Dict[str, int] = Field(default_factory=dict, description="Rate limiting rules")
+    cors_origins: List[str] = Field(default_factory=list, description="CORS allowed origins")
+    authentication_required: bool = Field(default=True, description="Require authentication")
+    api_versioning: str = Field(default="v1", description="API version")
+    request_timeout: int = Field(default=30, description="Request timeout in seconds")
+    load_balancing_strategy: str = Field(default="round_robin", description="Load balancing strategy")
+    
+class InferenceEndpointModule(BaseModel):
+    model_name: str = Field(..., description="Model name for inference")
+    model_version: str = Field(default="latest", description="Model version")
+    endpoint_url: str = Field(..., description="Inference endpoint URL")
+    system_prompt: str = Field(..., description="System prompt for LLM")
+    max_tokens: int = Field(default=1024, description="Maximum tokens per response")
+    temperature: float = Field(default=0.7, description="Sampling temperature")
+    top_p: float = Field(default=0.9, description="Top-p sampling parameter")
+    batch_size: int = Field(default=1, description="Batch size for inference")
+    
+class SecurityModule(BaseModel):
+    encryption_at_rest: bool = Field(default=True, description="Enable encryption at rest")
+    encryption_in_transit: bool = Field(default=True, description="Enable encryption in transit")
+    vulnerability_scanning: bool = Field(default=True, description="Enable vulnerability scanning")
+    access_control_type: str = Field(default="rbac", description="Access control type (rbac, abac)")
+    audit_logging: bool = Field(default=True, description="Enable audit logging")
+    compliance_standards: List[str] = Field(default_factory=list, description="Compliance standards")
+    
+class MonitoringModule(BaseModel):
+    metrics_enabled: bool = Field(default=True, description="Enable metrics collection")
+    logging_level: str = Field(default="INFO", description="Logging level")
+    tracing_enabled: bool = Field(default=True, description="Enable distributed tracing")
+    health_check_interval: int = Field(default=30, description="Health check interval in seconds")
+    alerting_enabled: bool = Field(default=True, description="Enable alerting")
+    dashboard_url: Optional[str] = Field(None, description="Monitoring dashboard URL")
+    
+class ModelRegistryModule(BaseModel):
+    registry_type: str = Field(..., description="Model registry type (mlflow, wandb, etc.)")
+    registry_url: str = Field(..., description="Model registry URL")
+    auto_versioning: bool = Field(default=True, description="Enable automatic versioning")
+    model_validation: bool = Field(default=True, description="Enable model validation")
+    metadata_tracking: bool = Field(default=True, description="Enable metadata tracking")
+    experiment_tracking: bool = Field(default=True, description="Enable experiment tracking")
+    
+class DataPipelineModule(BaseModel):
+    pipeline_type: str = Field(..., description="Pipeline type (batch, streaming, hybrid)")
+    data_sources: List[str] = Field(..., description="List of data sources")
+    data_sinks: List[str] = Field(..., description="List of data sinks")
+    processing_engine: str = Field(..., description="Processing engine (spark, airflow, etc.)")
+    schedule: Optional[str] = Field(None, description="Pipeline schedule (cron format)")
+    data_quality_checks: bool = Field(default=True, description="Enable data quality checks")
+    
+class DeploymentModule(BaseModel):
+    deployment_strategy: str = Field(default="blue_green", description="Deployment strategy")
+    container_registry: str = Field(..., description="Container registry URL")
+    orchestration_platform: str = Field(..., description="Orchestration platform (k8s, docker-compose)")
+    auto_scaling: bool = Field(default=True, description="Enable auto-scaling")
+    rollback_enabled: bool = Field(default=True, description="Enable rollback")
+    environment_configs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Environment-specific configs")
+    
+class ResourceManagementModule(BaseModel):
+    compute_resources: Dict[str, Any] = Field(default_factory=dict, description="Compute resource allocations")
+    storage_resources: Dict[str, Any] = Field(default_factory=dict, description="Storage resource allocations")
+    network_resources: Dict[str, Any] = Field(default_factory=dict, description="Network resource allocations")
+    auto_scaling_policies: Dict[str, Any] = Field(default_factory=dict, description="Auto-scaling policies")
+    cost_optimization: bool = Field(default=True, description="Enable cost optimization")
+    resource_quotas: Dict[str, Any] = Field(default_factory=dict, description="Resource quotas")
+    
+class NotificationModule(BaseModel):
+    email_enabled: bool = Field(default=True, description="Enable email notifications")
+    slack_enabled: bool = Field(default=False, description="Enable Slack notifications")
+    webhook_enabled: bool = Field(default=False, description="Enable webhook notifications")
+    notification_channels: Dict[str, Any] = Field(default_factory=dict, description="Notification channel configs")
+    alert_rules: List[Dict[str, Any]] = Field(default_factory=list, description="Alert rules")
+    escalation_policies: List[Dict[str, Any]] = Field(default_factory=list, description="Escalation policies")
+    
+class BackupRecoveryModule(BaseModel):
+    backup_enabled: bool = Field(default=True, description="Enable automated backups")
+    backup_frequency: str = Field(default="daily", description="Backup frequency")
+    retention_policy: str = Field(default="30d", description="Backup retention policy")
+    disaster_recovery_enabled: bool = Field(default=True, description="Enable disaster recovery")
+    backup_storage_type: str = Field(default="cloud", description="Backup storage type")
+    restore_testing: bool = Field(default=True, description="Enable restore testing")
+
+class ModuleConfig(BaseModel):
+    module_type: ModuleType = Field(..., description="Type of the module")
+    name: str = Field(..., description="Module name")
+    version: str = Field(default="1.0.0", description="Module version")
+    status: ModuleStatus = Field(default=ModuleStatus.ENABLED, description="Module status")
+    description: Optional[str] = Field(None, description="Module description")
+    dependencies: List[str] = Field(default_factory=list, description="Module dependencies")
+    config: Union[
+        JWTConfigModule,
+        RAGConfigModule, 
+        APIGatewayModule,
+        InferenceEndpointModule,
+        SecurityModule,
+        MonitoringModule,
+        ModelRegistryModule,
+        DataPipelineModule,
+        DeploymentModule,
+        ResourceManagementModule,
+        NotificationModule,
+        BackupRecoveryModule,
+        Dict[str, Any]
+    ] = Field(..., description="Module-specific configuration")
+    
+class ProjectManifest(BaseModel):
+    project_id: str = Field(..., description="Unique project identifier")
+    project_name: str = Field(..., description="Human-readable project name")
+    version: str = Field(default="1.0.0", description="Manifest version")
+    description: Optional[str] = Field(None, description="Project description")
+    owner: str = Field(..., description="Project owner")
+    team: List[str] = Field(default_factory=list, description="Project team members")
+    tags: List[str] = Field(default_factory=list, description="Project tags")
+    environment: str = Field(default="development", description="Target environment")
+    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
+    modules: List[ModuleConfig] = Field(..., description="List of module configurations")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    
+class ManifestRequest(BaseModel):
+    manifest: ProjectManifest = Field(..., description="Project manifest")
+    
+class ManifestResponse(BaseModel):
+    message: str
+    manifest_id: str
+    manifest_path: str
+    
+class ManifestListResponse(BaseModel):
+    manifests: List[Dict[str, Any]]
+    count: int
+    
+class ManifestValidationRequest(BaseModel):
+    manifest: ProjectManifest = Field(..., description="Manifest to validate")
+    
+class ManifestValidationResponse(BaseModel):
+    valid: bool
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+# ==================== MANIFEST UTILITY FUNCTIONS ====================
+
+def validate_manifest_dependencies(modules: List[ModuleConfig]) -> List[str]:
+    """Validate module dependencies are satisfied"""
+    errors = []
+    module_names = {module.name for module in modules}
+    
+    for module in modules:
+        for dependency in module.dependencies:
+            if dependency not in module_names:
+                errors.append(f"Module '{module.name}' depends on '{dependency}' which is not present in manifest")
+    
+    return errors
+
+def get_manifest_path(project_id: str) -> str:
+    """Get the file path for a manifest"""
+    return f"manifests/{project_id}.json"
+
+def load_manifest(project_id: str) -> Optional[ProjectManifest]:
+    """Load a manifest from file"""
+    manifest_path = get_manifest_path(project_id)
+    
+    if not os.path.exists(manifest_path):
+        return None
+    
+    try:
+        with open(manifest_path, 'r') as f:
+            manifest_data = json.load(f)
+        return ProjectManifest.model_validate(manifest_data)
+    except Exception:
+        return None
+
+def save_manifest(manifest: ProjectManifest) -> str:
+    """Save a manifest to file"""
+    manifest_path = get_manifest_path(manifest.project_id)
+    
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+    
+    # Update timestamp
+    manifest.updated_at = datetime.now()
+    
+    # Save manifest
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest.model_dump(), f, indent=2, default=str)
+    
+    return manifest_path
+
+def list_manifests() -> List[Dict[str, Any]]:
+    """List all available manifests"""
+    manifests = []
+    manifest_dir = "manifests"
+    
+    if not os.path.exists(manifest_dir):
+        return manifests
+    
+    for file in os.listdir(manifest_dir):
+        if file.endswith(".json"):
+            project_id = file.replace(".json", "")
+            manifest = load_manifest(project_id)
+            if manifest:
+                manifests.append({
+                    "project_id": manifest.project_id,
+                    "project_name": manifest.project_name,
+                    "version": manifest.version,
+                    "environment": manifest.environment,
+                    "owner": manifest.owner,
+                    "module_count": len(manifest.modules),
+                    "created_at": manifest.created_at,
+                    "updated_at": manifest.updated_at
+                })
+    
+    return manifests
 
 def extract_aihpc_config(policy_content: str, aihpc_env: str, aihpc_lane: str) -> Dict[str, str]:
     """Extract AIHPC configuration from policy content for a specific environment and lane"""
@@ -814,6 +1068,222 @@ async def update_policy_status(
     
     status_text = "enabled" if request.enabled else "disabled"
     return {"message": f"Policy {status_text} successfully: {client_id}", "policy_path": policy_path, "enabled": request.enabled}
+
+# ==================== MANIFEST API ENDPOINTS ====================
+
+@app.get("/manifests", response_model=ManifestListResponse)
+async def list_project_manifests():
+    """List all project manifests"""
+    manifests = list_manifests()
+    return {"manifests": manifests, "count": len(manifests)}
+
+@app.post("/manifests", response_model=ManifestResponse, status_code=201)
+async def create_project_manifest(
+    request: ManifestRequest,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Create a new project manifest (superuser only)"""
+    # Validate project_id format
+    if not re.match(r'^[a-zA-Z0-9_-]+$', request.manifest.project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    # Check if manifest already exists
+    if load_manifest(request.manifest.project_id):
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Manifest already exists: {request.manifest.project_id}"
+        )
+    
+    # Validate module dependencies
+    dependency_errors = validate_manifest_dependencies(request.manifest.modules)
+    if dependency_errors:
+        raise HTTPException(status_code=400, detail="Dependency validation failed: " + "; ".join(dependency_errors))
+    
+    try:
+        manifest_path = save_manifest(request.manifest)
+        return {
+            "message": f"Manifest created successfully: {request.manifest.project_id}",
+            "manifest_id": request.manifest.project_id,
+            "manifest_path": manifest_path
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create manifest: {str(e)}")
+
+@app.get("/manifests/{project_id}")
+async def get_project_manifest(project_id: str):
+    """Get a specific project manifest"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    return manifest
+
+@app.put("/manifests/{project_id}", response_model=ManifestResponse)
+async def update_project_manifest(
+    project_id: str,
+    request: ManifestRequest,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Update an existing project manifest (superuser only)"""
+    if project_id != request.manifest.project_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="project_id in path must match project_id in manifest"
+        )
+    
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    # Check if manifest exists
+    existing_manifest = load_manifest(project_id)
+    if not existing_manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    # Validate module dependencies
+    dependency_errors = validate_manifest_dependencies(request.manifest.modules)
+    if dependency_errors:
+        raise HTTPException(status_code=400, detail="Dependency validation failed: " + "; ".join(dependency_errors))
+    
+    # Preserve creation timestamp
+    request.manifest.created_at = existing_manifest.created_at
+    
+    try:
+        manifest_path = save_manifest(request.manifest)
+        return {
+            "message": f"Manifest updated successfully: {project_id}",
+            "manifest_id": project_id,
+            "manifest_path": manifest_path
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update manifest: {str(e)}")
+
+@app.delete("/manifests/{project_id}")
+async def delete_project_manifest(
+    project_id: str,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Delete a project manifest (superuser only)"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest_path = get_manifest_path(project_id)
+    
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    try:
+        os.remove(manifest_path)
+        return {"message": f"Manifest deleted successfully: {project_id}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete manifest: {str(e)}")
+
+@app.post("/manifests/validate", response_model=ManifestValidationResponse)
+async def validate_project_manifest(request: ManifestValidationRequest):
+    """Validate a project manifest without saving it"""
+    errors = []
+    warnings = []
+    
+    # Validate project_id format
+    if not re.match(r'^[a-zA-Z0-9_-]+$', request.manifest.project_id):
+        errors.append("Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens.")
+    
+    # Validate module dependencies
+    dependency_errors = validate_manifest_dependencies(request.manifest.modules)
+    errors.extend(dependency_errors)
+    
+    # Check for duplicate module names
+    module_names = [module.name for module in request.manifest.modules]
+    duplicate_names = [name for name in set(module_names) if module_names.count(name) > 1]
+    if duplicate_names:
+        errors.append(f"Duplicate module names found: {', '.join(duplicate_names)}")
+    
+    # Warning for disabled modules
+    disabled_modules = [module.name for module in request.manifest.modules if module.status == ModuleStatus.DISABLED]
+    if disabled_modules:
+        warnings.append(f"Disabled modules found: {', '.join(disabled_modules)}")
+    
+    # Warning for deprecated modules
+    deprecated_modules = [module.name for module in request.manifest.modules if module.status == ModuleStatus.DEPRECATED]
+    if deprecated_modules:
+        warnings.append(f"Deprecated modules found: {', '.join(deprecated_modules)}")
+    
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings
+    }
+
+@app.get("/manifests/{project_id}/modules")
+async def get_project_modules(project_id: str):
+    """Get all modules for a specific project"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    return {"modules": manifest.modules, "count": len(manifest.modules)}
+
+@app.get("/manifests/{project_id}/modules/{module_name}")
+async def get_project_module(
+    project_id: str, 
+    module_name: str
+):
+    """Get a specific module configuration from a project"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    for module in manifest.modules:
+        if module.name == module_name:
+            return module
+    
+    raise HTTPException(status_code=404, detail=f"Module not found: {module_name}")
+
+@app.get("/module-types")
+async def get_available_module_types():
+    """Get all available module types and their descriptions"""
+    return {
+        "module_types": [
+            {"type": ModuleType.JWT_CONFIG, "description": "JWT authentication and authorization configuration"},
+            {"type": ModuleType.RAG_CONFIG, "description": "Retrieval Augmented Generation system configuration"},
+            {"type": ModuleType.API_GATEWAY, "description": "API gateway and routing configuration"},
+            {"type": ModuleType.INFERENCE_ENDPOINT, "description": "LLM inference endpoint configuration with prompts"},
+            {"type": ModuleType.SECURITY, "description": "Security policies and compliance configuration"},
+            {"type": ModuleType.MONITORING, "description": "Monitoring, logging, and observability configuration"},
+            {"type": ModuleType.MODEL_REGISTRY, "description": "Model registry and versioning configuration"},
+            {"type": ModuleType.DATA_PIPELINE, "description": "Data processing pipeline configuration"},
+            {"type": ModuleType.DEPLOYMENT, "description": "Deployment strategy and environment configuration"},
+            {"type": ModuleType.RESOURCE_MANAGEMENT, "description": "Resource allocation and scaling configuration"},
+            {"type": ModuleType.NOTIFICATIONS, "description": "Notification and alerting configuration"},
+            {"type": ModuleType.BACKUP_RECOVERY, "description": "Backup and disaster recovery configuration"}
+        ]
+    }
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
