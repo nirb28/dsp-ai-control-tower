@@ -15,14 +15,14 @@ import re
 from config import SUPERUSER_SECRET_HASH, SUPERUSER_SALT
 import asyncio
 
-app = FastAPI(title="DSP AI Control Tower - OPA Policy Evaluator: /dspai-docs", docs_url=None, redoc_url=None)
+app = FastAPI(title="DSPAI - Control Tower", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/dspai-docs", include_in_schema=False)
+@app.get("/docs", include_in_schema=True)
 async def swagger_ui_html():
     return get_swagger_ui_html(
         openapi_url="/openapi.json",
-        title="FastAPI",
+        title="DSPAI - Control Tower",
         swagger_favicon_url="/static/control-tower.ico"
     )
 
