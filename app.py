@@ -18,7 +18,7 @@ import asyncio
 app = FastAPI(title="DSPAI - Control Tower", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/docs", include_in_schema=True)
+@app.get("/docs", include_in_schema=False)
 async def swagger_ui_html():
     return get_swagger_ui_html(
         openapi_url="/openapi.json",
@@ -500,7 +500,7 @@ async def authenticate_client(
 
 @app.get("/")
 async def root():
-    return {"message": "DSP AI Control Tower - OPA Policy Evaluator API. Swagger: /dspai-docs"}
+    return {"message": "DSP AI Control Tower - OPA Policy Evaluator API. Swagger: /docs"}
 
 @app.get("/policies")
 async def list_policies():
