@@ -43,6 +43,26 @@
       "status": "enabled",
       "description": "RAG system for customer service knowledge retrieval",
       "dependencies": ["auth-service"],
+      "cross_references": {
+        "authentication": {
+          "module_name": "auth-service",
+          "module_type": "jwt_config",
+          "purpose": "User context for personalized knowledge retrieval",
+          "required": false
+        },
+        "security": {
+          "module_name": "security-policies",
+          "module_type": "security",
+          "purpose": "Data access control and encryption",
+          "required": true
+        },
+        "monitoring": {
+          "module_name": "observability",
+          "module_type": "monitoring",
+          "purpose": "Track knowledge retrieval performance",
+          "required": false
+        }
+      },
       "config": {
         "vector_store_type": "faiss",
         "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
@@ -60,6 +80,26 @@
       "status": "enabled",
       "description": "API gateway for routing customer service requests",
       "dependencies": ["auth-service"],
+      "cross_references": {
+        "authentication": {
+          "module_name": "auth-service",
+          "module_type": "jwt_config",
+          "purpose": "Validate JWT tokens for API access",
+          "required": true
+        },
+        "monitoring": {
+          "module_name": "observability",
+          "module_type": "monitoring",
+          "purpose": "Monitor API gateway metrics and performance",
+          "required": true
+        },
+        "security": {
+          "module_name": "security-policies",
+          "module_type": "security",
+          "purpose": "Apply security policies and access control",
+          "required": true
+        }
+      },
       "config": {
         "rate_limiting": {
           "per_minute": 100,
@@ -83,6 +123,32 @@
       "status": "enabled",
       "description": "LLM inference endpoint for generating customer responses",
       "dependencies": ["knowledge-base", "gateway"],
+      "cross_references": {
+        "authentication": {
+          "module_name": "auth-service",
+          "module_type": "jwt_config",
+          "purpose": "JWT token validation for API requests",
+          "required": true
+        },
+        "knowledge_base": {
+          "module_name": "knowledge-base", 
+          "module_type": "rag_config",
+          "purpose": "Retrieve relevant context for customer queries",
+          "required": true
+        },
+        "monitoring": {
+          "module_name": "observability",
+          "module_type": "monitoring",
+          "purpose": "Track inference performance and usage metrics",
+          "required": false
+        },
+        "security": {
+          "module_name": "security-policies",
+          "module_type": "security",
+          "purpose": "Apply security policies for data handling",
+          "required": true
+        }
+      },
       "config": {
         "model_name": "gpt-4",
         "model_version": "2024-02-15",

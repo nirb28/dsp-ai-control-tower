@@ -251,6 +251,14 @@ class BackupRecoveryModule(BaseModel):
     backup_storage_type: str = Field(default="cloud", description="Backup storage type")
     restore_testing: bool = Field(default=True, description="Enable restore testing")
 
+class ModuleCrossReference(BaseModel):
+    """Cross-reference to another module for specific functionality"""
+    module_name: str = Field(..., description="Name of the referenced module")
+    module_type: Optional[str] = Field(None, description="Expected type of the referenced module")
+    purpose: str = Field(..., description="Purpose of this cross-reference")
+    required: bool = Field(default=True, description="Whether this reference is required")
+    fallback: Optional[str] = Field(None, description="Fallback module if primary is not available")
+
 class ModuleConfig(BaseModel):
     module_type: ModuleType = Field(..., description="Type of the module")
     name: str = Field(..., description="Module name")
@@ -258,6 +266,14 @@ class ModuleConfig(BaseModel):
     status: ModuleStatus = Field(default=ModuleStatus.ENABLED, description="Module status")
     description: Optional[str] = Field(None, description="Module description")
     dependencies: List[str] = Field(default_factory=list, description="Module dependencies")
+    cross_references: Dict[str, ModuleCrossReference] = Field(
+        default_factory=dict, 
+        description="Cross-references to other modules for specific functionality"
+    )
+    environment_overrides: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Environment-specific configuration overrides"
+    )
     config: Union[
         JWTConfigModule,
         RAGConfigModule, 
@@ -311,14 +327,39 @@ class ManifestValidationResponse(BaseModel):
 # ==================== MANIFEST UTILITY FUNCTIONS ====================
 
 def validate_manifest_dependencies(modules: List[ModuleConfig]) -> List[str]:
-    """Validate module dependencies are satisfied"""
+    """Validate module dependencies and cross-references are satisfied"""
     errors = []
     module_names = {module.name for module in modules}
+    module_types = {module.name: module.module_type for module in modules}
     
     for module in modules:
+        # Validate basic dependencies
         for dependency in module.dependencies:
             if dependency not in module_names:
                 errors.append(f"Module '{module.name}' depends on '{dependency}' which is not present in manifest")
+        
+        # Validate cross-references
+        for ref_key, cross_ref in module.cross_references.items():
+            if cross_ref.module_name not in module_names:
+                if cross_ref.required:
+                    # Check if fallback exists
+                    if cross_ref.fallback and cross_ref.fallback in module_names:
+                        continue
+                    errors.append(
+                        f"Module '{module.name}' has required cross-reference '{ref_key}' "
+                        f"to '{cross_ref.module_name}' which is not present in manifest"
+                    )
+                continue
+            
+            # Validate module type if specified
+            if cross_ref.module_type:
+                referenced_type = module_types.get(cross_ref.module_name)
+                if referenced_type != cross_ref.module_type:
+                    errors.append(
+                        f"Module '{module.name}' cross-reference '{ref_key}' expects "
+                        f"module '{cross_ref.module_name}' to be of type '{cross_ref.module_type}' "
+                        f"but it is of type '{referenced_type}'"
+                    )
     
     return errors
 
@@ -356,6 +397,128 @@ def save_manifest(manifest: ProjectManifest) -> str:
     
     return manifest_path
 
+def analyze_cross_references(modules: List[ModuleConfig]) -> Dict[str, Any]:
+    """Analyze cross-references in a manifest"""
+    cross_ref_graph = {}
+    module_providers = {}  # modules that can provide services
+    module_consumers = {}  # modules that consume services
+    
+    # Build provider and consumer maps
+    for module in modules:
+        if module.cross_references:
+            module_consumers[module.name] = list(module.cross_references.keys())
+            
+        # Identify what services this module can provide based on type
+        services = []
+        if module.module_type == "jwt_config":
+            services.extend(["authentication", "authorization", "token_validation"])
+        elif module.module_type == "monitoring":
+            services.extend(["logging", "metrics", "tracing", "health_checks"])
+        elif module.module_type == "security":
+            services.extend(["encryption", "access_control", "audit_logging"])
+        elif module.module_type == "notifications":
+            services.extend(["alerting", "notifications", "escalation"])
+        elif module.module_type == "backup_recovery":
+            services.extend(["backup", "disaster_recovery", "data_protection"])
+        elif module.module_type == "resource_management":
+            services.extend(["scaling", "resource_allocation", "cost_optimization"])
+        elif module.module_type == "model_registry":
+            services.extend(["model_versioning", "experiment_tracking", "model_validation"])
+        elif module.module_type == "api_gateway":
+            services.extend(["routing", "rate_limiting", "cors", "load_balancing"])
+        elif module.module_type == "rag_config":
+            services.extend(["knowledge_retrieval", "document_search", "semantic_search"])
+        elif module.module_type == "inference_endpoint":
+            services.extend(["llm_inference", "text_generation", "model_serving"])
+        elif module.module_type == "data_pipeline":
+            services.extend(["data_processing", "etl", "data_quality"])
+        elif module.module_type == "deployment":
+            services.extend(["container_deployment", "orchestration", "scaling"])
+            
+        if services:
+            module_providers[module.name] = services
+    
+    # Build cross-reference relationships
+    for module in modules:
+        cross_ref_graph[module.name] = {
+            "provides": module_providers.get(module.name, []),
+            "consumes": module_consumers.get(module.name, []),
+            "references": {},
+            "referenced_by": []
+        }
+        
+        for ref_key, cross_ref in module.cross_references.items():
+            cross_ref_graph[module.name]["references"][ref_key] = {
+                "target": cross_ref.module_name,
+                "purpose": cross_ref.purpose,
+                "required": cross_ref.required,
+                "fallback": cross_ref.fallback
+            }
+    
+    # Build reverse references
+    for module_name, module_data in cross_ref_graph.items():
+        for ref_key, ref_data in module_data["references"].items():
+            target = ref_data["target"]
+            if target in cross_ref_graph:
+                cross_ref_graph[target]["referenced_by"].append({
+                    "source": module_name,
+                    "reference_key": ref_key,
+                    "purpose": ref_data["purpose"]
+                })
+    
+    return cross_ref_graph
+
+def get_cross_reference_suggestions(modules: List[ModuleConfig]) -> Dict[str, List[str]]:
+    """Get suggestions for cross-references based on module types and common patterns"""
+    suggestions = {}
+    module_types = {module.name: module.module_type for module in modules}
+    
+    for module in modules:
+        module_suggestions = []
+        
+        # Inference endpoints should reference JWT, monitoring, and security
+        if module.module_type == "inference_endpoint":
+            for other_module in modules:
+                if other_module.name != module.name:
+                    if other_module.module_type == "jwt_config":
+                        module_suggestions.append(f"Consider adding JWT reference to '{other_module.name}' for authentication")
+                    elif other_module.module_type == "monitoring":
+                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for observability")
+                    elif other_module.module_type == "security":
+                        module_suggestions.append(f"Consider adding security reference to '{other_module.name}' for compliance")
+        
+        # API gateways should reference JWT and monitoring
+        elif module.module_type == "api_gateway":
+            for other_module in modules:
+                if other_module.name != module.name:
+                    if other_module.module_type == "jwt_config":
+                        module_suggestions.append(f"Consider adding JWT reference to '{other_module.name}' for API authentication")
+                    elif other_module.module_type == "monitoring":
+                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for API metrics")
+        
+        # RAG configs should reference security and monitoring
+        elif module.module_type == "rag_config":
+            for other_module in modules:
+                if other_module.name != module.name:
+                    if other_module.module_type == "security":
+                        module_suggestions.append(f"Consider adding security reference to '{other_module.name}' for data protection")
+                    elif other_module.module_type == "monitoring":
+                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for query tracking")
+        
+        # Data pipelines should reference monitoring and backup
+        elif module.module_type == "data_pipeline":
+            for other_module in modules:
+                if other_module.name != module.name:
+                    if other_module.module_type == "monitoring":
+                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for pipeline observability")
+                    elif other_module.module_type == "backup_recovery":
+                        module_suggestions.append(f"Consider adding backup reference to '{other_module.name}' for data protection")
+        
+        if module_suggestions:
+            suggestions[module.name] = module_suggestions
+    
+    return suggestions
+
 def list_manifests() -> List[Dict[str, Any]]:
     """List all available manifests"""
     manifests = []
@@ -376,6 +539,7 @@ def list_manifests() -> List[Dict[str, Any]]:
                     "environment": manifest.environment,
                     "owner": manifest.owner,
                     "module_count": len(manifest.modules),
+                    "cross_references_count": sum(len(m.cross_references) for m in manifest.modules),
                     "created_at": manifest.created_at,
                     "updated_at": manifest.updated_at
                 })
@@ -1264,6 +1428,99 @@ async def get_project_module(
             return module
     
     raise HTTPException(status_code=404, detail=f"Module not found: {module_name}")
+
+@app.get("/manifests/{project_id}/cross-references")
+async def get_project_cross_references(project_id: str):
+    """Get cross-reference analysis for a project manifest"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    cross_ref_analysis = analyze_cross_references(manifest.modules)
+    suggestions = get_cross_reference_suggestions(manifest.modules)
+    
+    return {
+        "project_id": project_id,
+        "cross_reference_graph": cross_ref_analysis,
+        "suggestions": suggestions,
+        "summary": {
+            "total_modules": len(manifest.modules),
+            "modules_with_references": len([m for m in manifest.modules if m.cross_references]),
+            "total_references": sum(len(m.cross_references) for m in manifest.modules),
+            "modules_referenced": len(set(
+                ref.module_name for m in manifest.modules 
+                for ref in m.cross_references.values()
+            ))
+        }
+    }
+
+@app.get("/manifests/{project_id}/cross-references/suggestions")
+async def get_cross_reference_suggestions_for_project(project_id: str):
+    """Get cross-reference suggestions for a project"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    suggestions = get_cross_reference_suggestions(manifest.modules)
+    
+    return {
+        "project_id": project_id,
+        "suggestions": suggestions,
+        "summary": {
+            "modules_with_suggestions": len(suggestions),
+            "total_suggestions": sum(len(s) for s in suggestions.values())
+        }
+    }
+
+@app.get("/manifests/{project_id}/modules/{module_name}/references")
+async def get_module_references(
+    project_id: str, 
+    module_name: str
+):
+    """Get all cross-references for a specific module"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
+        )
+    
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    target_module = None
+    for module in manifest.modules:
+        if module.name == module_name:
+            target_module = module
+            break
+    
+    if not target_module:
+        raise HTTPException(status_code=404, detail=f"Module not found: {module_name}")
+    
+    cross_ref_analysis = analyze_cross_references(manifest.modules)
+    module_analysis = cross_ref_analysis.get(module_name, {})
+    
+    return {
+        "project_id": project_id,
+        "module_name": module_name,
+        "module_type": target_module.module_type,
+        "provides_services": module_analysis.get("provides", []),
+        "references": module_analysis.get("references", {}),
+        "referenced_by": module_analysis.get("referenced_by", []),
+        "cross_references_raw": target_module.cross_references
+    }
 
 @app.get("/module-types")
 async def get_available_module_types():

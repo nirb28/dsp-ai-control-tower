@@ -84,6 +84,20 @@ class ManifestTester:
                         "status": "enabled",
                         "description": "Test LLM inference endpoint",
                         "dependencies": ["test-auth"],
+                        "cross_references": {
+                            "authentication": {
+                                "module_name": "test-auth",
+                                "module_type": "jwt_config",
+                                "purpose": "JWT token validation for API requests",
+                                "required": True
+                            },
+                            "monitoring": {
+                                "module_name": "test-monitoring",
+                                "module_type": "monitoring",
+                                "purpose": "Track inference performance",
+                                "required": False
+                            }
+                        },
                         "config": {
                             "model_name": "gpt-3.5-turbo",
                             "model_version": "latest",
@@ -221,7 +235,8 @@ class ManifestTester:
                 data = response.json()
                 print(f"✅ Get Modules: Found {data['count']} modules")
                 for module in data['modules'][:2]:  # Show first 2
-                    print(f"   - {module['name']} ({module['module_type']}): {module['status']}")
+                    cross_ref_count = len(module.get('cross_references', {}))
+                    print(f"   - {module['name']} ({module['module_type']}): {module['status']}, {cross_ref_count} cross-refs")
                 return True
             elif response.status_code == 404:
                 print(f"⚠️  Get Modules: Manifest not found - {project_id}")
@@ -256,6 +271,36 @@ class ManifestTester:
                 return False
         except Exception as e:
             print(f"❌ Update Manifest failed: {e}")
+            return False
+    
+    def test_cross_references(self, project_id: str) -> bool:
+        """Test cross-reference functionality"""
+        try:
+            # Test cross-reference analysis
+            response = requests.get(f"{self.base_url}/manifests/{project_id}/cross-references")
+            
+            if response.status_code == 200:
+                data = response.json()
+                summary = data['summary']
+                print(f"✅ Cross-References Analysis: {summary['total_modules']} modules, {summary['total_references']} references")
+                
+                # Test suggestions
+                response = requests.get(f"{self.base_url}/manifests/{project_id}/cross-references/suggestions")
+                if response.status_code == 200:
+                    suggestions = response.json()
+                    print(f"✅ Cross-Reference Suggestions: {suggestions['summary']['total_suggestions']} suggestions")
+                    return True
+                else:
+                    print(f"❌ Cross-Reference Suggestions failed: {response.status_code}")
+                    return False
+            elif response.status_code == 404:
+                print(f"⚠️  Cross-References: Manifest not found - {project_id}")
+                return True
+            else:
+                print(f"❌ Cross-References failed: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"❌ Cross-References failed: {e}")
             return False
     
     def test_delete_manifest(self, project_id: str) -> bool:
@@ -309,10 +354,13 @@ class ManifestTester:
         # Test 8: Get manifest modules
         results.append(self.test_get_manifest_modules(project_id))
         
-        # Test 9: Update manifest
+        # Test 9: Cross-reference analysis
+        results.append(self.test_cross_references(project_id))
+        
+        # Test 10: Update manifest
         results.append(self.test_update_manifest(test_manifest))
         
-        # Test 10: Delete manifest (cleanup)
+        # Test 11: Delete manifest (cleanup)
         results.append(self.test_delete_manifest(project_id))
         
         # Test existing manifest examples
@@ -322,6 +370,7 @@ class ManifestTester:
         # Test customer service manifest
         results.append(self.test_get_manifest("ai-customer-service"))
         results.append(self.test_get_manifest_modules("ai-customer-service"))
+        results.append(self.test_cross_references("ai-customer-service"))
         
         # Summary
         print("\n📊 Test Results Summary:")

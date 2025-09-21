@@ -39,6 +39,38 @@
       "status": "enabled",
       "description": "High-performance RAG system with knowledge graph integration",
       "dependencies": ["enterprise-auth", "data-pipeline"],
+      "cross_references": {
+        "authentication": {
+          "module_name": "enterprise-auth",
+          "module_type": "jwt_config",
+          "purpose": "User context and access-based document filtering",
+          "required": true
+        },
+        "data_source": {
+          "module_name": "data-processing",
+          "module_type": "data_pipeline",
+          "purpose": "Continuous knowledge base updates",
+          "required": true
+        },
+        "security": {
+          "module_name": "enterprise-security",
+          "module_type": "security",
+          "purpose": "Data classification and access control",
+          "required": true
+        },
+        "monitoring": {
+          "module_name": "enterprise-observability",
+          "module_type": "monitoring",
+          "purpose": "Query performance and relevance tracking",
+          "required": true
+        },
+        "backup": {
+          "module_name": "enterprise-dr",
+          "module_type": "backup_recovery",
+          "purpose": "Knowledge base backup and disaster recovery",
+          "required": true
+        }
+      },
       "config": {
         "vector_store_type": "neo4j_knowledge_graph",
         "embedding_model": "text-embedding-ada-002",
@@ -80,6 +112,44 @@
       "status": "enabled",
       "description": "Multi-model inference with load balancing and fallbacks",
       "dependencies": ["enterprise-rag", "enterprise-gateway", "model-management"],
+      "cross_references": {
+        "authentication": {
+          "module_name": "enterprise-auth",
+          "module_type": "jwt_config",
+          "purpose": "Enterprise SSO and role-based access control",
+          "required": true
+        },
+        "knowledge_retrieval": {
+          "module_name": "enterprise-rag",
+          "module_type": "rag_config",
+          "purpose": "Knowledge graph-based context retrieval",
+          "required": true
+        },
+        "model_management": {
+          "module_name": "model-management",
+          "module_type": "model_registry",
+          "purpose": "Model versioning and A/B testing",
+          "required": true
+        },
+        "monitoring": {
+          "module_name": "enterprise-observability",
+          "module_type": "monitoring",
+          "purpose": "Real-time inference monitoring and alerting",
+          "required": true
+        },
+        "security": {
+          "module_name": "enterprise-security",
+          "module_type": "security",
+          "purpose": "Zero-trust security and compliance validation",
+          "required": true
+        },
+        "resource_scaling": {
+          "module_name": "cloud-resources",
+          "module_type": "resource_management",
+          "purpose": "Auto-scaling for inference workloads",
+          "required": true
+        }
+      },
       "config": {
         "model_name": "gpt-4-turbo",
         "model_version": "2024-03-01",
