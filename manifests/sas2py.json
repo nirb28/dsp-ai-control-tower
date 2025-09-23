@@ -55,13 +55,35 @@
         "top_p": 1.0,
         "batch_size": 1
       }
+    },
+    {
+      "module_type": "inference_endpoint",
+      "name": "test",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Basic LLM inference for chat",
+      "dependencies": [
+        "simple-auth"
+      ],
+      "cross_references": {},
+      "environment_overrides": {},
+      "config": {
+        "model_name": "gpt-3.5-turbo",
+        "model_version": "latest",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/v1/chat/completions",
+        "system_prompt": "You are a helpful assistant. Be concise and accurate in your responses.",
+        "max_tokens": 150,
+        "temperature": 0.7,
+        "top_p": 1.0,
+        "batch_size": 1
+      }
     }
   ],
   "metadata": {
     "cost_center": "AMI",
     "business_unit": "R&D",
     "compliance_level": "low",
-    "data_classification": "proprietart",
+    "data_classification": "proprietary",
     "support_contact": "dev-team@company.com"
   }
 }
