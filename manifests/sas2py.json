@@ -36,7 +36,7 @@
     },
     {
       "module_type": "inference_endpoint",
-      "name": "llm-chat",
+      "name": "convert",
       "version": "1.0.0",
       "status": "enabled",
       "description": "Basic LLM inference for chat",
