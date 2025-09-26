@@ -177,6 +177,79 @@ class APIGatewayModule(BaseModel):
     request_timeout: int = Field(default=30, description="Request timeout in seconds")
     load_balancing_strategy: str = Field(default="round_robin", description="Load balancing strategy")
     
+class APISIXPlugin(BaseModel):
+    """APISIX plugin configuration"""
+    name: str = Field(..., description="Plugin name (e.g., jwt-auth, limit-req, prometheus)")
+    enabled: bool = Field(default=True, description="Whether the plugin is enabled")
+    config: Dict[str, Any] = Field(default_factory=dict, description="Plugin-specific configuration")
+    priority: Optional[int] = Field(None, description="Plugin execution priority (higher runs first)")
+    
+class APISIXRoute(BaseModel):
+    """APISIX route configuration"""
+    name: str = Field(..., description="Route name")
+    uri: str = Field(..., description="URI pattern for matching requests")
+    methods: List[str] = Field(default_factory=lambda: ["GET", "POST"], description="HTTP methods")
+    upstream_id: Optional[str] = Field(None, description="Reference to upstream service")
+    service_id: Optional[str] = Field(None, description="Reference to service configuration")
+    plugins: List[APISIXPlugin] = Field(default_factory=list, description="Plugins to apply to this route")
+    host: Optional[str] = Field(None, description="Host header for routing")
+    priority: int = Field(default=0, description="Route priority (higher matches first)")
+    vars: Optional[List[List[str]]] = Field(None, description="Advanced routing conditions")
+    
+class APISIXUpstream(BaseModel):
+    """APISIX upstream configuration for load balancing"""
+    name: str = Field(..., description="Upstream name")
+    type: str = Field(default="roundrobin", description="Load balancing type (roundrobin, chash, least_conn)")
+    nodes: Dict[str, int] = Field(..., description="Backend nodes {host:port: weight}")
+    timeout: Dict[str, int] = Field(
+        default_factory=lambda: {"connect": 30, "send": 30, "read": 30},
+        description="Timeout settings in seconds"
+    )
+    retries: int = Field(default=1, description="Number of retries")
+    health_check: Optional[Dict[str, Any]] = Field(None, description="Health check configuration")
+    
+class APISIXGatewayModule(BaseModel):
+    """APISIX API Gateway configuration for AI services"""
+    admin_api_url: str = Field(default="http://localhost:9080", description="APISIX Admin API URL")
+    admin_key: str = Field(default="${APISIX_ADMIN_KEY}", description="Admin API key")
+    gateway_url: str = Field(default="http://localhost:9080", description="Gateway URL for clients")
+    dashboard_url: Optional[str] = Field(default="http://localhost:9000", description="APISIX Dashboard URL")
+    
+    # Core configurations
+    routes: List[APISIXRoute] = Field(default_factory=list, description="Route configurations")
+    upstreams: List[APISIXUpstream] = Field(default_factory=list, description="Upstream service configurations")
+    
+    # Global plugins that apply to all routes
+    global_plugins: List[APISIXPlugin] = Field(default_factory=list, description="Global plugins")
+    
+    # Default plugin configurations
+    jwt_auth_enabled: bool = Field(default=True, description="Enable JWT authentication globally")
+    rate_limiting_enabled: bool = Field(default=True, description="Enable rate limiting globally")
+    logging_enabled: bool = Field(default=True, description="Enable logging globally")
+    prometheus_enabled: bool = Field(default=True, description="Enable Prometheus metrics")
+    
+    # Security configurations
+    ssl_enabled: bool = Field(default=False, description="Enable SSL/TLS")
+    ssl_cert: Optional[str] = Field(None, description="SSL certificate path")
+    ssl_key: Optional[str] = Field(None, description="SSL private key path")
+    
+    # CORS configuration
+    cors_enabled: bool = Field(default=True, description="Enable CORS")
+    cors_origins: List[str] = Field(default_factory=lambda: ["*"], description="Allowed CORS origins")
+    cors_methods: List[str] = Field(
+        default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        description="Allowed CORS methods"
+    )
+    
+    # Default timeout and retry settings
+    default_timeout: int = Field(default=60, description="Default request timeout in seconds")
+    default_retries: int = Field(default=2, description="Default number of retries")
+    
+    # AI-specific configurations
+    streaming_enabled: bool = Field(default=True, description="Enable streaming for LLM responses")
+    response_buffering: bool = Field(default=False, description="Buffer responses before sending")
+    request_buffering: bool = Field(default=True, description="Buffer requests before forwarding")
+    
 class InferenceEndpointModule(BaseModel):
     model_name: str = Field(..., description="Model name for inference")
     model_version: str = Field(default="latest", description="Model version")
@@ -278,6 +351,7 @@ class ModuleConfig(BaseModel):
         JWTConfigModule,
         RAGConfigModule, 
         APIGatewayModule,
+        APISIXGatewayModule,
         InferenceEndpointModule,
         SecurityModule,
         MonitoringModule,

@@ -1,0 +1,141 @@
+{
+  "project_id": "test-apisix-project",
+  "project_name": "Test APISIX Integration",
+  "version": "1.0.0",
+  "description": "Test project for APISIX integration",
+  "owner": "test-team",
+  "team": [
+    "test@example.com"
+  ],
+  "tags": [
+    "test",
+    "apisix"
+  ],
+  "environment": "test",
+  "created_at": "2025-09-25 21:59:46.502823",
+  "updated_at": "2025-09-25 21:59:46.503222",
+  "modules": [
+    {
+      "module_type": "jwt_config",
+      "name": "test-jwt-auth",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Test JWT authentication",
+      "dependencies": [],
+      "cross_references": {},
+      "environment_overrides": {},
+      "config": {
+        "secret_key": "your-secret-key",
+        "algorithm": "HS256",
+        "expiration_minutes": 30,
+        "issuer": "frontdoor-ai-gateway",
+        "audience": "ai-services",
+        "refresh_token_enabled": false
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "test-apisix-gateway",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Test APISIX Gateway",
+      "dependencies": [
+        "test-jwt-auth"
+      ],
+      "cross_references": {
+        "auth": {
+          "module_name": "test-jwt-auth",
+          "module_type": "jwt_config",
+          "purpose": "JWT validation",
+          "required": true,
+          "fallback": null
+        }
+      },
+      "environment_overrides": {},
+      "config": {
+        "admin_api_url": "http://localhost:9180",
+        "admin_key": "edd1c9f034335f136f87ad84b625c8f1",
+        "gateway_url": "http://localhost:9080",
+        "dashboard_url": "http://localhost:9000",
+        "routes": [
+          {
+            "name": "echo-route",
+            "uri": "/test/echo",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "upstream_id": null,
+            "service_id": null,
+            "plugins": [
+              {
+                "name": "jwt-auth",
+                "enabled": true,
+                "config": {
+                  "key": "test-key",
+                  "secret": "your-secret-key",
+                  "algorithm": "HS256"
+                },
+                "priority": null
+              },
+              {
+                "name": "limit-req",
+                "enabled": true,
+                "config": {
+                  "rate": 10,
+                  "burst": 5,
+                  "key_type": "var",
+                  "key": "remote_addr"
+                },
+                "priority": null
+              },
+              {
+                "name": "serverless-pre-function",
+                "enabled": true,
+                "config": {
+                  "phase": "access",
+                  "functions": [
+                    "\n                                                return function(conf, ctx)\n                                                    ngx.say('{\"message\":\"Hello from APISIX\",\"timestamp\":\"' .. os.date() .. '\"}')\n                                                    ngx.exit(200)\n                                                end\n                                                "
+                  ]
+                },
+                "priority": null
+              }
+            ],
+            "host": null,
+            "priority": 0,
+            "vars": null
+          }
+        ],
+        "upstreams": [],
+        "global_plugins": [],
+        "jwt_auth_enabled": true,
+        "rate_limiting_enabled": true,
+        "logging_enabled": true,
+        "prometheus_enabled": true,
+        "ssl_enabled": false,
+        "ssl_cert": null,
+        "ssl_key": null,
+        "cors_enabled": true,
+        "cors_origins": [
+          "*"
+        ],
+        "cors_methods": [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE",
+          "OPTIONS"
+        ],
+        "default_timeout": 60,
+        "default_retries": 2,
+        "streaming_enabled": true,
+        "response_buffering": false,
+        "request_buffering": true
+      }
+    }
+  ],
+  "metadata": {
+    "test": true,
+    "created_by": "test_script"
+  }
+}
