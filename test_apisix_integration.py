@@ -6,7 +6,7 @@ import asyncio
 import json
 import sys
 from typing import Dict, Any
-import jwt
+import jwt as pyjwt
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -26,9 +26,10 @@ def generate_jwt_token(secret: str = JWT_SECRET, exp_minutes: int = 30) -> str:
     """Generate a test JWT token"""
     now = datetime.now(timezone.utc)
     payload = {
+        "key": "test-apisix-project-key",  # This must match the consumer's JWT key
         "sub": "test-user",
-        "iat": now,
-        "exp": now + timedelta(minutes=exp_minutes),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=exp_minutes)).timestamp()),
         "iss": "frontdoor-ai-gateway",
         "aud": "ai-services",
         "metadata_filter": {
@@ -37,7 +38,8 @@ def generate_jwt_token(secret: str = JWT_SECRET, exp_minutes: int = 30) -> str:
         }
     }
     
-    token = jwt.encode(payload, secret, algorithm="HS256")
+    # Use PyJWT to encode the token
+    token = pyjwt.encode(payload, secret, algorithm="HS256")
     return token
 
 
