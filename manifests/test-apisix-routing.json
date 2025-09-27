@@ -1,0 +1,87 @@
+{
+  "project_id": "test-apisix-routing",
+  "project_name": "Test APISIX Routing",
+  "version": "1.0.0",
+  "description": "Test project for APISIX routing",
+  "owner": "test-team",
+  "team": [
+    "test@example.com"
+  ],
+  "tags": [
+    "test",
+    "apisix"
+  ],
+  "environment": "test",
+  "created_at": "2025-09-27 10:13:00.008620",
+  "updated_at": "2025-09-27 10:13:00.011172",
+  "modules": [
+    {
+      "module_type": "api_gateway",
+      "name": "test-apisix-gateway",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Test APISIX Gateway",
+      "dependencies": [],
+      "cross_references": {},
+      "environment_overrides": {},
+      "config": {
+        "admin_api_url": "http://localhost:9180",
+        "admin_key": "edd1c9f034335f136f87ad84b625c8f1",
+        "gateway_url": "http://localhost:9080",
+        "dashboard_url": "http://localhost:9000",
+        "routes": [
+          {
+            "name": "test-route",
+            "uri": "/test",
+            "methods": [
+              "GET"
+            ],
+            "upstream_id": null,
+            "service_id": null,
+            "plugins": [
+              {
+                "name": "serverless-pre-function",
+                "enabled": true,
+                "config": {
+                  "phase": "access",
+                  "functions": [
+                    "return function(conf, ctx) ngx.say('{\"message\":\"Hello from test-apisix-routing\",\"timestamp\":\"' .. os.date() .. '\"}') ngx.exit(200) end"
+                  ]
+                }
+              }
+            ],
+            "host": null,
+            "priority": 0,
+            "vars": null
+          }
+        ],
+        "upstreams": [],
+        "global_plugins": [],
+        "jwt_auth_enabled": true,
+        "rate_limiting_enabled": true,
+        "logging_enabled": true,
+        "prometheus_enabled": true,
+        "ssl_enabled": false,
+        "ssl_cert": null,
+        "ssl_key": null,
+        "cors_enabled": true,
+        "cors_origins": [
+          "*"
+        ],
+        "cors_methods": [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE",
+          "OPTIONS"
+        ],
+        "default_timeout": 60,
+        "default_retries": 2,
+        "streaming_enabled": true,
+        "response_buffering": false,
+        "request_buffering": true
+      }
+    }
+  ],
+  "metadata": {}
+}
