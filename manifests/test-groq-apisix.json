@@ -1,0 +1,172 @@
+{
+  "project_id": "test-groq-apisix",
+  "project_name": "Test Groq APISIX Integration",
+  "version": "1.0.0",
+  "description": "Test project with Groq LLM via APISIX ai-proxy plugin",
+  "owner": "test-team",
+  "team": [
+    "test@example.com"
+  ],
+  "tags": [
+    "test",
+    "groq",
+    "apisix",
+    "ai-proxy"
+  ],
+  "environment": "test",
+  "created_at": "2025-09-28 17:05:02.813261",
+  "updated_at": "2025-09-28 17:05:02.820485",
+  "modules": [
+    {
+      "module_type": "inference_endpoint",
+      "name": "groq-llm-service",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Groq LLM Inference Service via APISIX",
+      "dependencies": [
+        "groq-apisix-gateway"
+      ],
+      "cross_references": {
+        "gateway": {
+          "module_name": "groq-apisix-gateway",
+          "module_type": "api_gateway",
+          "purpose": "Route requests through APISIX ai-proxy to Groq API",
+          "required": true,
+          "fallback": null
+        }
+      },
+      "environment_overrides": {},
+      "config": {
+        "model_name": "llama-3.1-8b-instant",
+        "model_version": "latest",
+        "endpoint_url": "http://localhost:9080/groq/chat/completions",
+        "system_prompt": "You are a helpful AI assistant powered by Groq.",
+        "max_tokens": 2048,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "batch_size": 1
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "groq-apisix-gateway",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "APISIX Gateway with Groq ai-proxy integration",
+      "dependencies": [],
+      "cross_references": {
+        "groq_service": {
+          "module_name": "groq-llm-service",
+          "module_type": "inference_endpoint",
+          "purpose": "Proxy requests to Groq API with authentication",
+          "required": true,
+          "fallback": null
+        }
+      },
+      "environment_overrides": {},
+      "config": {
+        "admin_api_url": "http://localhost:9180",
+        "admin_key": "edd1c9f034335f136f87ad84b625c8f1",
+        "gateway_url": "http://localhost:9080",
+        "dashboard_url": "http://localhost:9000",
+        "routes": [
+          {
+            "name": "groq-route",
+            "uri": "/groq/chat/*",
+            "methods": [
+              "POST"
+            ],
+            "upstream_id": "groq-upstream",
+            "service_id": null,
+            "plugins": [
+              {
+                "name": "proxy-rewrite",
+                "enabled": true,
+                "config": {
+                  "uri": "/openai/v1/chat/completions",
+                  "scheme": "https"
+                },
+                "priority": null
+              },
+              {
+                "name": "ai-proxy",
+                "enabled": true,
+                "config": {
+                  "provider": "openai-compatible",
+                  "auth": {
+                    "header": {
+                      "Authorization": "Bearer <API_KEY>"
+                    }
+                  },
+                  "options": {
+                    "model": "llama-3.1-8b-instant"
+                  },
+                  "override": {
+                    "endpoint": "https://api.groq.com/openai/v1/chat/completions"
+                  }
+                },
+                "priority": null
+              }
+            ],
+            "host": null,
+            "priority": 0,
+            "vars": null
+          }
+        ],
+        "upstreams": [
+          {
+            "name": "groq-upstream",
+            "type": "roundrobin",
+            "nodes": {
+              "api.groq.com:443": 1
+            },
+            "timeout": {
+              "connect": 10,
+              "send": 30,
+              "read": 60
+            },
+            "retries": 2,
+            "health_check": null
+          }
+        ],
+        "global_plugins": [
+          {
+            "name": "cors",
+            "enabled": true,
+            "config": {
+              "allow_origins": "*",
+              "allow_methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "allow_headers": "*",
+              "max_age": 3600
+            },
+            "priority": null
+          }
+        ],
+        "jwt_auth_enabled": false,
+        "rate_limiting_enabled": false,
+        "logging_enabled": true,
+        "prometheus_enabled": false,
+        "ssl_enabled": false,
+        "ssl_cert": null,
+        "ssl_key": null,
+        "cors_enabled": true,
+        "cors_origins": [
+          "*"
+        ],
+        "cors_methods": [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE",
+          "OPTIONS"
+        ],
+        "default_timeout": 60,
+        "default_retries": 2,
+        "streaming_enabled": true,
+        "response_buffering": false,
+        "request_buffering": true
+      }
+    }
+  ],
+  "metadata": {}
+}

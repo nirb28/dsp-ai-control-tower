@@ -1,28 +1,68 @@
 {
   "project_id": "test-apisix-routing",
-  "project_name": "Test APISIX Routing",
+  "project_name": "Test APISIX + Inference Combined",
   "version": "1.0.0",
-  "description": "Test project for APISIX routing",
+  "description": "Test project combining APISIX gateway with inference endpoints",
   "owner": "test-team",
   "team": [
     "test@example.com"
   ],
   "tags": [
     "test",
-    "apisix"
+    "apisix",
+    "inference",
+    "combined"
   ],
   "environment": "test",
-  "created_at": "2025-09-27 10:13:00.008620",
-  "updated_at": "2025-09-27 10:13:00.011172",
+  "created_at": "2025-09-27 21:51:39.521806",
+  "updated_at": "2025-09-27 21:51:39.522229",
   "modules": [
+    {
+      "module_type": "inference_endpoint",
+      "name": "test-llm-service",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Test LLM Inference Service",
+      "dependencies": [],
+      "cross_references": {
+        "gateway": {
+          "module_name": "test-apisix-gateway",
+          "module_type": "api_gateway",
+          "purpose": "Receive routed requests from APISIX gateway",
+          "required": true,
+          "fallback": null
+        }
+      },
+      "environment_overrides": {},
+      "config": {
+        "model_name": "llama-3.1-8b-instant",
+        "model_version": "latest",
+        "endpoint_url": "http://localhost:9080/v1/chat/completions",
+        "system_prompt": "You are a helpful AI assistant.",
+        "max_tokens": 1024,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "batch_size": 1
+      }
+    },
     {
       "module_type": "api_gateway",
       "name": "test-apisix-gateway",
       "version": "1.0.0",
       "status": "enabled",
-      "description": "Test APISIX Gateway",
-      "dependencies": [],
-      "cross_references": {},
+      "description": "Test APISIX Gateway with LLM routing",
+      "dependencies": [
+        "test-llm-service"
+      ],
+      "cross_references": {
+        "llm_service": {
+          "module_name": "test-llm-service",
+          "module_type": "inference_endpoint",
+          "purpose": "Route inference requests to LLM service",
+          "required": true,
+          "fallback": null
+        }
+      },
       "environment_overrides": {},
       "config": {
         "admin_api_url": "http://localhost:9180",
@@ -30,6 +70,120 @@
         "gateway_url": "http://localhost:9080",
         "dashboard_url": "http://localhost:9000",
         "routes": [
+          {
+            "name": "llm-inference-route",
+            "uri": "/v1/inference/*",
+            "methods": [
+              "POST",
+              "GET",
+              "OPTIONS"
+            ],
+            "upstream_id": "test-apisix-routing-groq-upstream",
+            "service_id": null,
+            "plugins": [
+              {
+                "name": "limit-req",
+                "enabled": true,
+                "config": {
+                  "rate": 10,
+                  "burst": 5,
+                  "rejected_code": 429,
+                  "key_type": "var",
+                  "key": "remote_addr",
+                  "rejected_msg": "Rate limit exceeded for inference requests"
+                },
+                "priority": null
+              },
+              {
+                "name": "ai-prompt-template",
+                "enabled": true,
+                "config": {
+                  "templates": [
+                    {
+                      "name": "groq-llama-template",
+                      "template": {
+                        "model": "llama-3.1-8b-instant",
+                        "messages": [
+                          {
+                            "role": "system",
+                            "content": "You are a helpful AI assistant. Respond concisely and accurately."
+                          },
+                          {
+                            "role": "user",
+                            "content": "{{prompt}}"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "priority": null
+              },
+              {
+                "name": "proxy-rewrite",
+                "enabled": true,
+                "config": {
+                  "regex_uri": [
+                    "^/v1/inference/(.*)",
+                    "/v1/chat/completions"
+                  ],
+                  "headers": {
+                    "Authorization": "Bearer <API_KEY>",
+                    "Content-Type": "application/json",
+                    "Accept-Encoding": "identity",
+                    "X-Gateway-Service": "test-apisix-gateway",
+                    "X-Target-Service": "groq-llm-service"
+                  }
+                },
+                "priority": null
+              }
+            ],
+            "host": null,
+            "priority": 0,
+            "vars": null
+          },
+          {
+            "name": "llm-chat-route",
+            "uri": "/v1/chat/completions",
+            "methods": [
+              "POST",
+              "OPTIONS"
+            ],
+            "upstream_id": "test-apisix-routing-groq-upstream",
+            "service_id": null,
+            "plugins": [
+              {
+                "name": "limit-req",
+                "enabled": true,
+                "config": {
+                  "rate": 20,
+                  "burst": 10,
+                  "rejected_code": 429,
+                  "key_type": "var",
+                  "key": "remote_addr",
+                  "rejected_msg": "Rate limit exceeded for chat requests"
+                },
+                "priority": null
+              },
+              {
+                "name": "proxy-rewrite",
+                "enabled": true,
+                "config": {
+                  "headers": {
+                    "Authorization": "Bearer <API_KEY>",
+                    "Content-Type": "application/json",
+                    "Accept-Encoding": "identity",
+                    "X-Gateway-Service": "test-apisix-gateway",
+                    "X-Target-Service": "groq-llm-service"
+                  }
+                },
+                "priority": null
+              }
+            ],
+            "host": null,
+            "priority": 0,
+            "vars": null
+          },
           {
             "name": "test-route",
             "uri": "/test",
@@ -45,9 +199,10 @@
                 "config": {
                   "phase": "access",
                   "functions": [
-                    "return function(conf, ctx) ngx.say('{\"message\":\"Hello from test-apisix-routing\",\"timestamp\":\"' .. os.date() .. '\"}') ngx.exit(200) end"
+                    "return function(conf, ctx) ngx.say('{\"message\":\"Hello from combined APISIX + Inference test\",\"timestamp\":\"' .. os.date() .. '\",\"services\":[\"test-apisix-gateway\",\"test-llm-service\"]}') ngx.exit(200) end"
                   ]
-                }
+                },
+                "priority": null
               }
             ],
             "host": null,
@@ -55,12 +210,39 @@
             "vars": null
           }
         ],
-        "upstreams": [],
-        "global_plugins": [],
-        "jwt_auth_enabled": true,
+        "upstreams": [
+          {
+            "name": "groq-upstream",
+            "type": "roundrobin",
+            "nodes": {
+              "api.groq.com:443": 100
+            },
+            "timeout": {
+              "connect": 10,
+              "send": 30,
+              "read": 60
+            },
+            "retries": 2,
+            "health_check": null
+          }
+        ],
+        "global_plugins": [
+          {
+            "name": "cors",
+            "enabled": true,
+            "config": {
+              "allow_origins": "*",
+              "allow_methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "allow_headers": "*",
+              "max_age": 3600
+            },
+            "priority": null
+          }
+        ],
+        "jwt_auth_enabled": false,
         "rate_limiting_enabled": true,
         "logging_enabled": true,
-        "prometheus_enabled": true,
+        "prometheus_enabled": false,
         "ssl_enabled": false,
         "ssl_cert": null,
         "ssl_key": null,
