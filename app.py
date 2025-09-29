@@ -3,7 +3,7 @@ import json
 import subprocess
 import hashlib
 import secrets
-from fastapi import FastAPI, HTTPException, Body, Depends, Header
+from fastapi import FastAPI, HTTPException, Body, Depends, Header, Query
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -373,6 +373,7 @@ class ProjectManifest(BaseModel):
     team: List[str] = Field(default_factory=list, description="Project team members")
     tags: List[str] = Field(default_factory=list, description="Project tags")
     environment: str = Field(default="development", description="Target environment")
+    environments: Optional[Dict[str, Dict[str, Any]]] = Field(default_factory=dict, description="Environment-specific configurations")
     created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
     modules: List[ModuleConfig] = Field(..., description="List of module configurations")
@@ -470,6 +471,133 @@ def save_manifest(manifest: ProjectManifest) -> str:
         json.dump(manifest.model_dump(), f, indent=2, default=str)
     
     return manifest_path
+
+def resolve_environment_variables(data: Any, manifest: ProjectManifest) -> Any:
+    """Recursively resolve environment variable placeholders in manifest data"""
+    if isinstance(data, dict):
+        resolved = {}
+        for key, value in data.items():
+            resolved[key] = resolve_environment_variables(value, manifest)
+        return resolved
+    elif isinstance(data, list):
+        return [resolve_environment_variables(item, manifest) for item in data]
+    elif isinstance(data, str):
+        # Handle environment variable substitution
+        if "${" in data:
+            resolved_value = data
+            
+            # Handle ${environments.${environment}.key} pattern
+            env_pattern = r'\$\{environments\.\$\{environment\}\.([^}]+)\}'
+            matches = re.findall(env_pattern, resolved_value)
+            for match in matches:
+                placeholder = f"${{environments.${{environment}}.{match}}}"
+                
+                # Navigate to the environment value
+                try:
+                    current_env = manifest.environment
+                    if hasattr(manifest, 'environments') and manifest.environments:
+                        env_data = manifest.environments.get(current_env, {})
+                        
+                        # Split the key path (e.g., "secrets.jwt_secret_key")
+                        key_parts = match.split('.')
+                        value = env_data
+                        for part in key_parts:
+                            if isinstance(value, dict) and part in value:
+                                value = value[part]
+                            else:
+                                value = None
+                                break
+                        
+                        if value is not None:
+                            resolved_value = resolved_value.replace(placeholder, str(value))
+                except (AttributeError, KeyError):
+                    # Keep original placeholder if resolution fails
+                    pass
+            
+            # Handle ${environment} pattern
+            env_var_pattern = r'\$\{environment\}'
+            resolved_value = re.sub(env_var_pattern, manifest.environment, resolved_value)
+            
+            # Handle other ${VARIABLE} patterns (environment variables)
+            var_pattern = r'\$\{([A-Z_][A-Z0-9_]*)\}'
+            matches = re.findall(var_pattern, resolved_value)
+            for match in matches:
+                placeholder = f"${{{match}}}"
+                env_value = os.getenv(match)
+                if env_value is not None:
+                    resolved_value = resolved_value.replace(placeholder, env_value)
+            
+            return resolved_value
+        return data
+    else:
+        return data
+
+def apply_environment_overrides(module: ModuleConfig, manifest: ProjectManifest) -> ModuleConfig:
+    """Apply environment-specific overrides to a module configuration"""
+    if not module.environment_overrides:
+        return module
+    
+    current_env = manifest.environment
+    if current_env not in module.environment_overrides:
+        return module
+    
+    # Create a copy of the module
+    module_dict = module.model_dump()
+    overrides = module.environment_overrides[current_env]
+    
+    # Apply overrides to the config section
+    if 'config' in module_dict and isinstance(module_dict['config'], dict):
+        module_dict['config'].update(overrides)
+    
+    # Recreate the module with overrides applied
+    return ModuleConfig.model_validate(module_dict)
+
+def get_resolved_manifest(project_id: str, resolve_env: bool = False) -> Optional[ProjectManifest]:
+    """Load a manifest and optionally resolve environment variables"""
+    manifest = load_manifest(project_id)
+    if not manifest or not resolve_env:
+        return manifest
+    
+    # Convert to dict, resolve variables, and convert back
+    manifest_dict = manifest.model_dump()
+    resolved_dict = resolve_environment_variables(manifest_dict, manifest)
+    
+    # Apply environment overrides to modules
+    if 'modules' in resolved_dict:
+        for i, module_data in enumerate(resolved_dict['modules']):
+            module = ModuleConfig.model_validate(module_data)
+            module_with_overrides = apply_environment_overrides(module, manifest)
+            resolved_dict['modules'][i] = module_with_overrides.model_dump()
+    
+    return ProjectManifest.model_validate(resolved_dict)
+
+def get_resolved_module(project_id: str, module_name: str, resolve_env: bool = False) -> Optional[ModuleConfig]:
+    """Get a specific module with optional environment resolution"""
+    manifest = load_manifest(project_id)
+    if not manifest:
+        return None
+    
+    # Find the module
+    target_module = None
+    for module in manifest.modules:
+        if module.name == module_name:
+            target_module = module
+            break
+    
+    if not target_module:
+        return None
+    
+    if not resolve_env:
+        return target_module
+    
+    # Apply environment overrides
+    module_with_overrides = apply_environment_overrides(target_module, manifest)
+    
+    # Resolve environment variables
+    module_dict = module_with_overrides.model_dump()
+    resolved_dict = resolve_environment_variables(module_dict, manifest)
+    
+    return ModuleConfig.model_validate(resolved_dict)
 
 def analyze_cross_references(modules: List[ModuleConfig]) -> Dict[str, Any]:
     """Analyze cross-references in a manifest"""
@@ -1351,15 +1479,18 @@ async def create_project_manifest(
         raise HTTPException(status_code=500, detail=f"Failed to create manifest: {str(e)}")
 
 @app.get("/manifests/{project_id}")
-async def get_project_manifest(project_id: str):
-    """Get a specific project manifest"""
+async def get_project_manifest(
+    project_id: str,
+    resolve_env: bool = Query(False, description="Resolve environment variables and apply overrides")
+):
+    """Get a specific project manifest with optional environment variable resolution"""
     if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
         raise HTTPException(
             status_code=400, 
             detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
         )
     
-    manifest = load_manifest(project_id)
+    manifest = get_resolved_manifest(project_id, resolve_env)
     if not manifest:
         raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
     
@@ -1467,15 +1598,18 @@ async def validate_project_manifest(request: ManifestValidationRequest):
     }
 
 @app.get("/manifests/{project_id}/modules")
-async def get_project_modules(project_id: str):
-    """Get all modules for a specific project"""
+async def get_project_modules(
+    project_id: str,
+    resolve_env: bool = Query(False, description="Resolve environment variables and apply overrides")
+):
+    """Get all modules for a specific project with optional environment variable resolution"""
     if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
         raise HTTPException(
             status_code=400, 
             detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
         )
     
-    manifest = load_manifest(project_id)
+    manifest = get_resolved_manifest(project_id, resolve_env)
     if not manifest:
         raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
     
@@ -1484,24 +1618,26 @@ async def get_project_modules(project_id: str):
 @app.get("/manifests/{project_id}/modules/{module_name}")
 async def get_project_module(
     project_id: str, 
-    module_name: str
+    module_name: str,
+    resolve_env: bool = Query(False, description="Resolve environment variables and apply overrides")
 ):
-    """Get a specific module configuration from a project"""
+    """Get a specific module configuration from a project with optional environment variable resolution"""
     if not re.match(r'^[a-zA-Z0-9_-]+$', project_id):
         raise HTTPException(
             status_code=400, 
             detail="Invalid project_id format. Use only alphanumeric characters, underscores, and hyphens."
         )
     
-    manifest = load_manifest(project_id)
-    if not manifest:
-        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    module = get_resolved_module(project_id, module_name, resolve_env)
+    if not module:
+        # Check if project exists first
+        manifest = load_manifest(project_id)
+        if not manifest:
+            raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+        else:
+            raise HTTPException(status_code=404, detail=f"Module not found: {module_name}")
     
-    for module in manifest.modules:
-        if module.name == module_name:
-            return module
-    
-    raise HTTPException(status_code=404, detail=f"Module not found: {module_name}")
+    return module
 
 @app.get("/manifests/{project_id}/cross-references")
 async def get_project_cross_references(project_id: str):
