@@ -340,18 +340,9 @@ class ModuleCrossReference(BaseModel):
 class ModuleConfig(BaseModel):
     module_type: ModuleType = Field(..., description="Type of the module")
     name: str = Field(..., description="Module name")
-    version: str = Field(default="1.0.0", description="Module version")
-    status: ModuleStatus = Field(default=ModuleStatus.ENABLED, description="Module status")
+    version: Optional[str] = Field(default="1.0.0", description="Module version")
+    status: Optional[ModuleStatus] = Field(default=ModuleStatus.ENABLED, description="Module status")
     description: Optional[str] = Field(None, description="Module description")
-    dependencies: List[str] = Field(default_factory=list, description="Module dependencies")
-    cross_references: Dict[str, ModuleCrossReference] = Field(
-        default_factory=dict, 
-        description="Cross-references to other modules for specific functionality"
-    )
-    environment_overrides: Dict[str, Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Environment-specific configuration overrides"
-    )
     config: Union[
         JWTConfigModule,
         RAGConfigModule, 
@@ -369,20 +360,34 @@ class ModuleConfig(BaseModel):
         Dict[str, Any]
     ] = Field(..., description="Module-specific configuration")
     
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "module_type": "inference_endpoint",
+                    "name": "my-llm",
+                    "config": {
+                        "model_name": "gpt-4",
+                        "endpoint_url": "https://api.openai.com/v1/chat/completions"
+                    }
+                }
+            ]
+        }
+    }
+    
 class ProjectManifest(BaseModel):
     project_id: str = Field(..., description="Unique project identifier")
     project_name: str = Field(..., description="Human-readable project name")
-    version: str = Field(default="1.0.0", description="Manifest version")
+    version: Optional[str] = Field(default="1.0.0", description="Manifest version")
     description: Optional[str] = Field(None, description="Project description")
     owner: str = Field(..., description="Project owner")
-    team: List[str] = Field(default_factory=list, description="Project team members")
-    tags: List[str] = Field(default_factory=list, description="Project tags")
-    environment: str = Field(default="development", description="Target environment")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Project tags")
+    environment: Optional[str] = Field(default="development", description="Target environment")
     environments: Optional[Dict[str, Dict[str, Any]]] = Field(default_factory=dict, description="Environment-specific configurations")
-    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
+    created_at: Optional[datetime] = Field(default_factory=datetime.now, description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(default_factory=datetime.now, description="Last update timestamp")
     modules: List[ModuleConfig] = Field(..., description="List of module configurations")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
     
 class ManifestRequest(BaseModel):
     manifest: ProjectManifest = Field(..., description="Project manifest")
@@ -407,39 +412,13 @@ class ManifestValidationResponse(BaseModel):
 # ==================== MANIFEST UTILITY FUNCTIONS ====================
 
 def validate_manifest_dependencies(modules: List[ModuleConfig]) -> List[str]:
-    """Validate module dependencies and cross-references are satisfied"""
+    """Validate manifest modules"""
     errors = []
-    module_names = {module.name for module in modules}
-    module_types = {module.name: module.module_type for module in modules}
-    
-    for module in modules:
-        # Validate basic dependencies
-        for dependency in module.dependencies:
-            if dependency not in module_names:
-                errors.append(f"Module '{module.name}' depends on '{dependency}' which is not present in manifest")
-        
-        # Validate cross-references
-        for ref_key, cross_ref in module.cross_references.items():
-            if cross_ref.module_name not in module_names:
-                if cross_ref.required:
-                    # Check if fallback exists
-                    if cross_ref.fallback and cross_ref.fallback in module_names:
-                        continue
-                    errors.append(
-                        f"Module '{module.name}' has required cross-reference '{ref_key}' "
-                        f"to '{cross_ref.module_name}' which is not present in manifest"
-                    )
-                continue
-            
-            # Validate module type if specified
-            if cross_ref.module_type:
-                referenced_type = module_types.get(cross_ref.module_name)
-                if referenced_type != cross_ref.module_type:
-                    errors.append(
-                        f"Module '{module.name}' cross-reference '{ref_key}' expects "
-                        f"module '{cross_ref.module_name}' to be of type '{cross_ref.module_type}' "
-                        f"but it is of type '{referenced_type}'"
-                    )
+    # Basic validation - check for duplicate module names
+    module_names = [module.name for module in modules]
+    duplicates = [name for name in set(module_names) if module_names.count(name) > 1]
+    if duplicates:
+        errors.append(f"Duplicate module names found: {', '.join(duplicates)}")
     
     return errors
 
@@ -538,24 +517,9 @@ def resolve_environment_variables(data: Any, manifest: ProjectManifest) -> Any:
         return data
 
 def apply_environment_overrides(module: ModuleConfig, manifest: ProjectManifest) -> ModuleConfig:
-    """Apply environment-specific overrides to a module configuration"""
-    if not module.environment_overrides:
-        return module
-    
-    current_env = manifest.environment
-    if current_env not in module.environment_overrides:
-        return module
-    
-    # Create a copy of the module
-    module_dict = module.model_dump()
-    overrides = module.environment_overrides[current_env]
-    
-    # Apply overrides to the config section
-    if 'config' in module_dict and isinstance(module_dict['config'], dict):
-        module_dict['config'].update(overrides)
-    
-    # Recreate the module with overrides applied
-    return ModuleConfig.model_validate(module_dict)
+    """Apply environment-specific overrides to a module configuration (deprecated - kept for compatibility)"""
+    # No-op function since environment_overrides field has been removed
+    return module
 
 def get_resolved_manifest(project_id: str, resolve_env: bool = False) -> Optional[ProjectManifest]:
     """Load a manifest and optionally resolve environment variables"""
@@ -605,17 +569,11 @@ def get_resolved_module(project_id: str, module_name: str, resolve_env: bool = F
     return ModuleConfig.model_validate(resolved_dict)
 
 def analyze_cross_references(modules: List[ModuleConfig]) -> Dict[str, Any]:
-    """Analyze cross-references in a manifest"""
-    cross_ref_graph = {}
-    module_providers = {}  # modules that can provide services
-    module_consumers = {}  # modules that consume services
+    """Analyze module capabilities (deprecated - cross_references removed)"""
+    module_graph = {}
     
-    # Build provider and consumer maps
+    # Build module capability map based on type
     for module in modules:
-        if module.cross_references:
-            module_consumers[module.name] = list(module.cross_references.keys())
-            
-        # Identify what services this module can provide based on type
         services = []
         if module.module_type == "jwt_config":
             services.extend(["authentication", "authorization", "token_validation"])
@@ -642,89 +600,17 @@ def analyze_cross_references(modules: List[ModuleConfig]) -> Dict[str, Any]:
         elif module.module_type == "deployment":
             services.extend(["container_deployment", "orchestration", "scaling"])
             
-        if services:
-            module_providers[module.name] = services
-    
-    # Build cross-reference relationships
-    for module in modules:
-        cross_ref_graph[module.name] = {
-            "provides": module_providers.get(module.name, []),
-            "consumes": module_consumers.get(module.name, []),
-            "references": {},
-            "referenced_by": []
+        module_graph[module.name] = {
+            "provides": services,
+            "module_type": module.module_type
         }
-        
-        for ref_key, cross_ref in module.cross_references.items():
-            cross_ref_graph[module.name]["references"][ref_key] = {
-                "target": cross_ref.module_name,
-                "purpose": cross_ref.purpose,
-                "required": cross_ref.required,
-                "fallback": cross_ref.fallback
-            }
     
-    # Build reverse references
-    for module_name, module_data in cross_ref_graph.items():
-        for ref_key, ref_data in module_data["references"].items():
-            target = ref_data["target"]
-            if target in cross_ref_graph:
-                cross_ref_graph[target]["referenced_by"].append({
-                    "source": module_name,
-                    "reference_key": ref_key,
-                    "purpose": ref_data["purpose"]
-                })
-    
-    return cross_ref_graph
+    return module_graph
 
 def get_cross_reference_suggestions(modules: List[ModuleConfig]) -> Dict[str, List[str]]:
-    """Get suggestions for cross-references based on module types and common patterns"""
-    suggestions = {}
-    module_types = {module.name: module.module_type for module in modules}
-    
-    for module in modules:
-        module_suggestions = []
-        
-        # Inference endpoints should reference JWT, monitoring, and security
-        if module.module_type == "inference_endpoint":
-            for other_module in modules:
-                if other_module.name != module.name:
-                    if other_module.module_type == "jwt_config":
-                        module_suggestions.append(f"Consider adding JWT reference to '{other_module.name}' for authentication")
-                    elif other_module.module_type == "monitoring":
-                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for observability")
-                    elif other_module.module_type == "security":
-                        module_suggestions.append(f"Consider adding security reference to '{other_module.name}' for compliance")
-        
-        # API gateways should reference JWT and monitoring
-        elif module.module_type == "api_gateway":
-            for other_module in modules:
-                if other_module.name != module.name:
-                    if other_module.module_type == "jwt_config":
-                        module_suggestions.append(f"Consider adding JWT reference to '{other_module.name}' for API authentication")
-                    elif other_module.module_type == "monitoring":
-                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for API metrics")
-        
-        # RAG configs should reference security and monitoring
-        elif module.module_type == "rag_config":
-            for other_module in modules:
-                if other_module.name != module.name:
-                    if other_module.module_type == "security":
-                        module_suggestions.append(f"Consider adding security reference to '{other_module.name}' for data protection")
-                    elif other_module.module_type == "monitoring":
-                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for query tracking")
-        
-        # Data pipelines should reference monitoring and backup
-        elif module.module_type == "data_pipeline":
-            for other_module in modules:
-                if other_module.name != module.name:
-                    if other_module.module_type == "monitoring":
-                        module_suggestions.append(f"Consider adding monitoring reference to '{other_module.name}' for pipeline observability")
-                    elif other_module.module_type == "backup_recovery":
-                        module_suggestions.append(f"Consider adding backup reference to '{other_module.name}' for data protection")
-        
-        if module_suggestions:
-            suggestions[module.name] = module_suggestions
-    
-    return suggestions
+    """Get suggestions for module relationships (deprecated - cross_references removed)"""
+    # Return empty suggestions since cross_references field has been removed
+    return {}
 
 def list_manifests() -> List[Dict[str, Any]]:
     """List all available manifests"""
@@ -746,7 +632,6 @@ def list_manifests() -> List[Dict[str, Any]]:
                     "environment": manifest.environment,
                     "owner": manifest.owner,
                     "module_count": len(manifest.modules),
-                    "cross_references_count": sum(len(m.cross_references) for m in manifest.modules),
                     "created_at": manifest.created_at,
                     "updated_at": manifest.updated_at
                 })
@@ -1662,16 +1547,9 @@ async def get_project_cross_references(project_id: str):
     
     return {
         "project_id": project_id,
-        "cross_reference_graph": cross_ref_analysis,
-        "suggestions": suggestions,
+        "module_capabilities": cross_ref_analysis,
         "summary": {
-            "total_modules": len(manifest.modules),
-            "modules_with_references": len([m for m in manifest.modules if m.cross_references]),
-            "total_references": sum(len(m.cross_references) for m in manifest.modules),
-            "modules_referenced": len(set(
-                ref.module_name for m in manifest.modules 
-                for ref in m.cross_references.values()
-            ))
+            "total_modules": len(manifest.modules)
         }
     }
 

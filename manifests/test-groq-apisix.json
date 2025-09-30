@@ -1,41 +1,13 @@
 {
   "project_id": "test-groq-apisix",
   "project_name": "Test Groq APISIX Integration",
-  "version": "1.0.0",
-  "description": "Test project with Groq LLM via APISIX ai-proxy plugin",
   "owner": "test-team",
-  "team": [
-    "test@example.com"
-  ],
-  "tags": [
-    "test",
-    "groq",
-    "apisix",
-    "ai-proxy"
-  ],
   "environment": "test",
-  "created_at": "2025-09-28 17:05:02.813261",
-  "updated_at": "2025-09-28 17:05:02.820485",
   "modules": [
     {
       "module_type": "inference_endpoint",
       "name": "groq-llm-service",
-      "version": "1.0.0",
-      "status": "enabled",
-      "description": "Groq LLM Inference Service via APISIX",
-      "dependencies": [
-        "groq-apisix-gateway"
-      ],
-      "cross_references": {
-        "gateway": {
-          "module_name": "groq-apisix-gateway",
-          "module_type": "api_gateway",
-          "purpose": "Route requests through APISIX ai-proxy to Groq API",
-          "required": true,
-          "fallback": null
-        }
-      },
-      "environment_overrides": {},
+      "dependencies": ["groq-apisix-gateway"],
       "config": {
         "apisix_route": "groq-route",
         "apisix_gateway_module": "groq-apisix-gateway",
@@ -48,19 +20,6 @@
     {
       "module_type": "api_gateway",
       "name": "groq-apisix-gateway",
-      "version": "1.0.0",
-      "description": "APISIX Gateway with Groq ai-proxy integration",
-      "dependencies": [],
-      "cross_references": {
-        "groq_service": {
-          "module_name": "groq-llm-service",
-          "module_type": "inference_endpoint",
-          "purpose": "Proxy requests to Groq API with authentication",
-          "required": true,
-          "fallback": null
-        }
-      },
-      "environment_overrides": {},
       "config": {
         "admin_api_url": "http://localhost:9180",
         "admin_key": "edd1c9f034335f136f87ad84b625c8f1",
@@ -164,6 +123,5 @@
         "request_buffering": true
       }
     }
-  ],
-  "metadata": {}
+  ]
 }

@@ -1,30 +1,11 @@
 {
   "project_id": "sas2py",
   "project_name": "SAS to Python Code Conversion",
-  "version": "1.0.0",
-  "description": "ad",
   "owner": "AMI",
-  "team": [
-    "developer@company.com"
-  ],
-  "tags": [
-    "llm",
-    "development",
-    "poc"
-  ],
-  "environment": "development",
-  "created_at": "2025-09-22 12:20:23.395875",
-  "updated_at": "2025-09-22 12:20:23.432538",
   "modules": [
     {
       "module_type": "jwt_config",
       "name": "simple-auth",
-      "version": "1.0.0",
-      "status": "enabled",
-      "description": "Basic JWT authentication",
-      "dependencies": [],
-      "cross_references": {},
-      "environment_overrides": {},
       "config": {
         "secret_key": "${environments.${environment}.secrets.jwt_secret_key}",
         "algorithm": "HS256",
@@ -37,53 +18,26 @@
     {
       "module_type": "inference_endpoint",
       "name": "convert",
-      "version": "1.0.0",
-      "status": "enabled",
-      "description": "Basic LLM inference for chat",
-      "dependencies": [
-        "simple-auth"
-      ],
-      "cross_references": {},
-      "environment_overrides": {},
+      "dependencies": ["simple-auth"],
       "config": {
         "model_name": "gpt-3.5-turbo",
-        "model_version": "latest",
         "endpoint_url": "${environments.${environment}.urls.api_base_url}/v1/chat/completions",
         "system_prompt": "You are a helpful assistant. Be concise and accurate in your responses.",
         "max_tokens": 150,
-        "temperature": 0.7,
-        "top_p": 1.0,
-        "batch_size": 1
+        "temperature": 0.7
       }
     },
     {
       "module_type": "inference_endpoint",
       "name": "test",
-      "version": "1.0.0",
-      "status": "enabled",
-      "description": "Basic LLM inference for chat",
-      "dependencies": [
-        "simple-auth"
-      ],
-      "cross_references": {},
-      "environment_overrides": {},
+      "dependencies": ["simple-auth"],
       "config": {
         "model_name": "gpt-3.5-turbo",
-        "model_version": "latest",
         "endpoint_url": "${environments.${environment}.urls.api_base_url}/v1/chat/completions",
         "system_prompt": "You are a helpful assistant. Be concise and accurate in your responses.",
         "max_tokens": 150,
-        "temperature": 0.7,
-        "top_p": 1.0,
-        "batch_size": 1
+        "temperature": 0.7
       }
     }
-  ],
-  "metadata": {
-    "cost_center": "AMI",
-    "business_unit": "R&D",
-    "compliance_level": "low",
-    "data_classification": "proprietary",
-    "support_contact": "dev-team@company.com"
-  }
+  ]
 }

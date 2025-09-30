@@ -1,39 +1,12 @@
 {
   "project_id": "test-apisix-routing",
   "project_name": "Test APISIX + Inference Combined",
-  "version": "1.0.0",
-  "description": "Test project combining APISIX gateway with inference endpoints",
   "owner": "test-team",
-  "team": [
-    "test@example.com"
-  ],
-  "tags": [
-    "test",
-    "apisix",
-    "inference",
-    "combined"
-  ],
   "environment": "test",
-  "created_at": "2025-09-27 21:51:39.521806",
-  "updated_at": "2025-09-27 21:51:39.522229",
   "modules": [
     {
       "module_type": "inference_endpoint",
       "name": "test-llm-service",
-      "version": "1.0.0",
-      "status": "enabled",
-      "description": "Test LLM Inference Service",
-      "dependencies": [],
-      "cross_references": {
-        "gateway": {
-          "module_name": "test-apisix-gateway",
-          "module_type": "api_gateway",
-          "purpose": "Receive routed requests from APISIX gateway",
-          "required": true,
-          "fallback": null
-        }
-      },
-      "environment_overrides": {},
       "config": {
         "apisix_route": "llm-chat-route",
         "apisix_gateway_module": "test-apisix-gateway",
@@ -46,22 +19,6 @@
     {
       "module_type": "api_gateway",
       "name": "test-apisix-gateway",
-      "version": "1.0.0",
-      "status": "enabled",
-      "description": "Test APISIX Gateway with LLM routing",
-      "dependencies": [
-        "test-llm-service"
-      ],
-      "cross_references": {
-        "llm_service": {
-          "module_name": "test-llm-service",
-          "module_type": "inference_endpoint",
-          "purpose": "Route inference requests to LLM service",
-          "required": true,
-          "fallback": null
-        }
-      },
-      "environment_overrides": {},
       "config": {
         "admin_api_url": "http://localhost:9180",
         "admin_key": "edd1c9f034335f136f87ad84b625c8f1",
