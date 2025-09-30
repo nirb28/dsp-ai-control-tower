@@ -37,21 +37,18 @@
       },
       "environment_overrides": {},
       "config": {
+        "apisix_route": "groq-route",
+        "apisix_gateway_module": "groq-apisix-gateway",
         "model_name": "llama-3.1-8b-instant",
-        "model_version": "latest",
-        "endpoint_url": "http://localhost:9080/groq/chat/completions",
         "system_prompt": "You are a helpful AI assistant powered by Groq.",
         "max_tokens": 2048,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "batch_size": 1
+        "temperature": 0.7
       }
     },
     {
       "module_type": "api_gateway",
       "name": "groq-apisix-gateway",
       "version": "1.0.0",
-      "status": "enabled",
       "description": "APISIX Gateway with Groq ai-proxy integration",
       "dependencies": [],
       "cross_references": {

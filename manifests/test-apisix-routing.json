@@ -35,14 +35,12 @@
       },
       "environment_overrides": {},
       "config": {
+        "apisix_route": "llm-chat-route",
+        "apisix_gateway_module": "test-apisix-gateway",
         "model_name": "llama-3.1-8b-instant",
-        "model_version": "latest",
-        "endpoint_url": "http://localhost:9080/v1/chat/completions",
         "system_prompt": "You are a helpful AI assistant.",
         "max_tokens": 1024,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "batch_size": 1
+        "temperature": 0.7
       }
     },
     {

@@ -251,14 +251,19 @@ class APISIXGatewayModule(BaseModel):
     request_buffering: bool = Field(default=True, description="Buffer requests before forwarding")
     
 class InferenceEndpointModule(BaseModel):
-    model_name: str = Field(..., description="Model name for inference")
-    model_version: str = Field(default="latest", description="Model version")
-    endpoint_url: str = Field(..., description="Inference endpoint URL")
-    system_prompt: str = Field(..., description="System prompt for LLM")
-    max_tokens: int = Field(default=1024, description="Maximum tokens per response")
-    temperature: float = Field(default=0.7, description="Sampling temperature")
-    top_p: float = Field(default=0.9, description="Top-p sampling parameter")
-    batch_size: int = Field(default=1, description="Batch size for inference")
+    # APISIX route reference (if using APISIX gateway)
+    apisix_route: Optional[str] = Field(None, description="APISIX route name to use for this endpoint")
+    apisix_gateway_module: Optional[str] = Field(None, description="Name of the APISIX gateway module providing the route")
+    
+    # Direct endpoint configuration (optional if using APISIX route)
+    model_name: Optional[str] = Field(None, description="Model name for inference")
+    model_version: Optional[str] = Field(default="latest", description="Model version")
+    endpoint_url: Optional[str] = Field(None, description="Inference endpoint URL")
+    system_prompt: Optional[str] = Field(None, description="System prompt for LLM")
+    max_tokens: Optional[int] = Field(default=1024, description="Maximum tokens per response")
+    temperature: Optional[float] = Field(default=0.7, description="Sampling temperature")
+    top_p: Optional[float] = Field(default=0.9, description="Top-p sampling parameter")
+    batch_size: Optional[int] = Field(default=1, description="Batch size for inference")
     
 class SecurityModule(BaseModel):
     encryption_at_rest: bool = Field(default=True, description="Enable encryption at rest")
