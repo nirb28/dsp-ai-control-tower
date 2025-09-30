@@ -2,6 +2,7 @@
   "project_id": "sas2py",
   "project_name": "SAS to Python Code Conversion",
   "owner": "AMI",
+  "environment": "development",
   "modules": [
     {
       "module_type": "jwt_config",
@@ -18,26 +19,159 @@
     {
       "module_type": "inference_endpoint",
       "name": "convert",
-      "dependencies": ["simple-auth"],
+      "dependencies": ["simple-auth", "apisix-convert-route"],
       "config": {
-        "model_name": "gpt-3.5-turbo",
-        "endpoint_url": "${environments.${environment}.urls.api_base_url}/v1/chat/completions",
-        "system_prompt": "You are a helpful assistant. Be concise and accurate in your responses.",
-        "max_tokens": 150,
-        "temperature": 0.7
+        "model_name": "llama-3.1-70b-versatile",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/api/sas2py/convert",
+        "system_prompt": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas.",
+        "max_tokens": 2000,
+        "temperature": 0.3
       }
     },
     {
       "module_type": "inference_endpoint",
       "name": "test",
-      "dependencies": ["simple-auth"],
+      "dependencies": ["simple-auth", "apisix-test-route"],
       "config": {
-        "model_name": "gpt-3.5-turbo",
-        "endpoint_url": "${environments.${environment}.urls.api_base_url}/v1/chat/completions",
-        "system_prompt": "You are a helpful assistant. Be concise and accurate in your responses.",
-        "max_tokens": 150,
-        "temperature": 0.7
+        "model_name": "llama-3.1-8b-instant",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/api/sas2py/test",
+        "system_prompt": "You are a Python testing expert. Generate unit tests for the provided code.",
+        "max_tokens": 1500,
+        "temperature": 0.5
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "apisix-convert-route",
+      "dependencies": ["convert", "simple-auth"],
+      "config": {
+        "gateway_type": "apisix",
+        "routes": [
+          {
+            "name": "convert",
+            "uri": "/api/sas2py/convert",
+            "methods": ["POST"],
+            "upstream": {
+              "type": "roundrobin",
+              "nodes": {
+                "${environments.${environment}.urls.groq_base_url}": 1
+              },
+              "timeout": {
+                "connect": 60,
+                "send": 60,
+                "read": 60
+              }
+            },
+            "plugins": {
+              "jwt-auth": {},
+              "ai-prompt-template": {
+                "templates": [
+                  {
+                    "name": "converter",
+                    "template": {
+                      "model": "llama-3.1-70b-versatile",
+                      "messages": [
+                        {
+                          "role": "system",
+                          "content": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas, numpy, and other standard libraries. Maintain the same logic and output format."
+                        },
+                        {
+                          "role": "user",
+                          "content": "{{user_input}}"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "proxy-rewrite": {
+                "uri": "/openai/v1/chat/completions"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "apisix-test-route",
+      "dependencies": ["test", "simple-auth"],
+      "config": {
+        "gateway_type": "apisix",
+        "routes": [
+          {
+            "name": "test",
+            "uri": "/api/sas2py/test",
+            "methods": ["POST"],
+            "upstream": {
+              "type": "roundrobin",
+              "nodes": {
+                "${environments.${environment}.urls.groq_base_url}": 1
+              },
+              "timeout": {
+                "connect": 60,
+                "send": 60,
+                "read": 60
+              }
+            },
+            "plugins": {
+              "jwt-auth": {},
+              "ai-prompt-template": {
+                "templates": [
+                  {
+                    "name": "python-test-generator",
+                    "template": {
+                      "model": "llama-3.1-8b-instant",
+                      "messages": [
+                        {
+                          "role": "system",
+                          "content": "You are a Python testing expert. Generate comprehensive unit tests for the provided Python code using pytest. Include edge cases and assertions."
+                        },
+                        {
+                          "role": "user",
+                          "content": "{{user_input}}"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "proxy-rewrite": {
+                "uri": "/openai/v1/chat/completions"
+              }
+            }
+          }
+        ]
       }
     }
-  ]
+  ],
+  "environments": {
+    "development": {
+      "secrets": {
+        "jwt_secret_key": "${DEV_JWT_SECRET}"
+      },
+      "urls": {
+        "groq_base_url": "https://api.groq.com",
+        "api_base_url": "http://localhost:8000"
+      }
+    },
+    "staging": {
+      "secrets": {
+        "jwt_secret_key": "${STAGING_JWT_SECRET}"
+      },
+      "urls": {
+        "groq_base_url": "https://api.groq.com",
+        "api_base_url": "https://staging-api.example.com"
+      }
+    },
+    "production": {
+      "secrets": {
+        "jwt_secret_key": "${PROD_JWT_SECRET}"
+      },
+      "urls": {
+        "groq_base_url": "https://api.groq.com",
+        "api_base_url": "https://api.example.com"
+      }
+    }
+  }
 }

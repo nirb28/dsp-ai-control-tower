@@ -6,7 +6,7 @@ import secrets
 from fastapi import FastAPI, HTTPException, Body, Depends, Header, Query
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 from enum import Enum
@@ -170,12 +170,21 @@ class RAGConfigModule(BaseModel):
     query_expansion_enabled: bool = Field(default=False, description="Enable query expansion")
     
 class APIGatewayModule(BaseModel):
+    gateway_type: str = Field(default="generic", description="Gateway type")
     rate_limiting: Dict[str, int] = Field(default_factory=dict, description="Rate limiting rules")
     cors_origins: List[str] = Field(default_factory=list, description="CORS allowed origins")
     authentication_required: bool = Field(default=True, description="Require authentication")
     api_versioning: str = Field(default="v1", description="API version")
     request_timeout: int = Field(default=30, description="Request timeout in seconds")
     load_balancing_strategy: str = Field(default="round_robin", description="Load balancing strategy")
+    
+    @model_validator(mode='before')
+    @classmethod
+    def reject_apisix(cls, data: Any) -> Any:
+        """Reject if gateway_type is apisix - should use APISIXGatewayModule instead"""
+        if isinstance(data, dict) and data.get('gateway_type') == 'apisix':
+            raise ValueError("Use APISIXGatewayModule for gateway_type='apisix'")
+        return data
     
 class APISIXPlugin(BaseModel):
     """APISIX plugin configuration"""
@@ -190,8 +199,9 @@ class APISIXRoute(BaseModel):
     uri: str = Field(..., description="URI pattern for matching requests")
     methods: List[str] = Field(default_factory=lambda: ["GET", "POST"], description="HTTP methods")
     upstream_id: Optional[str] = Field(None, description="Reference to upstream service")
+    upstream: Optional[Dict[str, Any]] = Field(None, description="Inline upstream configuration")
     service_id: Optional[str] = Field(None, description="Reference to service configuration")
-    plugins: List[APISIXPlugin] = Field(default_factory=list, description="Plugins to apply to this route")
+    plugins: Union[List[APISIXPlugin], Dict[str, Any]] = Field(default_factory=dict, description="Plugins (list or dict format)")
     host: Optional[str] = Field(None, description="Host header for routing")
     priority: int = Field(default=0, description="Route priority (higher matches first)")
     vars: Optional[List[List[str]]] = Field(None, description="Advanced routing conditions")
@@ -210,6 +220,7 @@ class APISIXUpstream(BaseModel):
     
 class APISIXGatewayModule(BaseModel):
     """APISIX API Gateway configuration for AI services"""
+    gateway_type: str = Field(default="apisix", description="Gateway type - must be 'apisix'")
     admin_api_url: str = Field(default="http://localhost:9080", description="APISIX Admin API URL")
     admin_key: str = Field(default="${APISIX_ADMIN_KEY}", description="Admin API key")
     gateway_url: str = Field(default="http://localhost:9080", description="Gateway URL for clients")
@@ -345,9 +356,9 @@ class ModuleConfig(BaseModel):
     description: Optional[str] = Field(None, description="Module description")
     config: Union[
         JWTConfigModule,
-        RAGConfigModule, 
-        APIGatewayModule,
+        RAGConfigModule,
         APISIXGatewayModule,
+        APIGatewayModule,
         InferenceEndpointModule,
         SecurityModule,
         MonitoringModule,
@@ -359,6 +370,14 @@ class ModuleConfig(BaseModel):
         BackupRecoveryModule,
         Dict[str, Any]
     ] = Field(..., description="Module-specific configuration")
+    
+    @model_validator(mode='before')
+    @classmethod
+    def validate_config(cls, data: Any) -> Any:
+        """Custom validator to handle api_gateway discrimination"""
+        # Just return data as-is, let Pydantic's Union matching handle it
+        # The order in the Union (APISIXGatewayModule before APIGatewayModule) matters
+        return data
     
     model_config = {
         "json_schema_extra": {
