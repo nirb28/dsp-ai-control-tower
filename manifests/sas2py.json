@@ -11,9 +11,10 @@
         "secret_key": "${environments.${environment}.secrets.jwt_secret_key}",
         "algorithm": "HS256",
         "expiration_minutes": 30,
-        "issuer": "basic-llm-${environment}",
+        "issuer": "sas2py-${environment}",
         "audience": "${environment}-users",
-        "refresh_token_enabled": false
+        "refresh_token_enabled": false,
+        "service_url": "${environments.${environment}.urls.jwt_service_url}"
       }
     },
     {
@@ -22,7 +23,7 @@
       "dependencies": ["simple-auth", "apisix-convert-route"],
       "config": {
         "model_name": "llama-3.1-70b-versatile",
-        "endpoint_url": "${environments.${environment}.urls.api_base_url}/api/sas2py/convert",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/convert",
         "system_prompt": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas.",
         "max_tokens": 2000,
         "temperature": 0.3
@@ -34,7 +35,7 @@
       "dependencies": ["simple-auth", "apisix-test-route"],
       "config": {
         "model_name": "llama-3.1-8b-instant",
-        "endpoint_url": "${environments.${environment}.urls.api_base_url}/api/sas2py/test",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/test",
         "system_prompt": "You are a Python testing expert. Generate unit tests for the provided code.",
         "max_tokens": 1500,
         "temperature": 0.5
@@ -49,7 +50,7 @@
         "routes": [
           {
             "name": "convert",
-            "uri": "/api/sas2py/convert",
+            "uri": "/sas2py/convert",
             "methods": ["POST"],
             "upstream": {
               "type": "roundrobin",
@@ -101,7 +102,7 @@
         "routes": [
           {
             "name": "test",
-            "uri": "/api/sas2py/test",
+            "uri": "/sas2py/test",
             "methods": ["POST"],
             "upstream": {
               "type": "roundrobin",
@@ -148,11 +149,12 @@
   "environments": {
     "development": {
       "secrets": {
-        "jwt_secret_key": "${DEV_JWT_SECRET}"
+        "jwt_secret_key": "dev-secret-key"
       },
       "urls": {
         "groq_base_url": "https://api.groq.com",
-        "api_base_url": "http://localhost:8000"
+        "api_base_url": "http://localhost:8000",
+        "jwt_service_url": "http://localhost:5000"
       }
     },
     "staging": {
@@ -161,7 +163,8 @@
       },
       "urls": {
         "groq_base_url": "https://api.groq.com",
-        "api_base_url": "https://staging-api.example.com"
+        "api_base_url": "https://staging-api.example.com",
+        "jwt_service_url": "https://staging-jwt.example.com"
       }
     },
     "production": {
@@ -170,7 +173,8 @@
       },
       "urls": {
         "groq_base_url": "https://api.groq.com",
-        "api_base_url": "https://api.example.com"
+        "api_base_url": "https://api.example.com",
+        "jwt_service_url": "https://jwt.example.com"
       }
     }
   }
