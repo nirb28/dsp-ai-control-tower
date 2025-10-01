@@ -480,7 +480,10 @@ def resolve_environment_variables(data: Any, manifest: ProjectManifest) -> Any:
     if isinstance(data, dict):
         resolved = {}
         for key, value in data.items():
-            resolved[key] = resolve_environment_variables(value, manifest)
+            # Resolve both keys and values (important for upstream nodes)
+            resolved_key = resolve_environment_variables(key, manifest) if isinstance(key, str) else key
+            resolved_value = resolve_environment_variables(value, manifest)
+            resolved[resolved_key] = resolved_value
         return resolved
     elif isinstance(data, list):
         return [resolve_environment_variables(item, manifest) for item in data]
