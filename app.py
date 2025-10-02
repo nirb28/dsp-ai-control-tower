@@ -14,6 +14,9 @@ import uvicorn
 import re
 from config import SUPERUSER_SECRET_HASH, SUPERUSER_SALT
 import asyncio
+from secret_manager import get_secret_manager, SecretManager
+from vault_client import MultiVaultManager, VaultError
+from encryption_utils import get_encryption_manager
 
 app = FastAPI(title="DSPAI - Control Tower", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -145,6 +148,7 @@ class ModuleType(str, Enum):
     RESOURCE_MANAGEMENT = "resource_management"
     NOTIFICATIONS = "notifications"
     BACKUP_RECOVERY = "backup_recovery"
+    VAULT = "vault"
 
 class ModuleStatus(str, Enum):
     ENABLED = "enabled"
@@ -340,6 +344,62 @@ class BackupRecoveryModule(BaseModel):
     backup_storage_type: str = Field(default="cloud", description="Backup storage type")
     restore_testing: bool = Field(default=True, description="Enable restore testing")
 
+class VaultInstanceConfig(BaseModel):
+    """Configuration for a single Vault instance"""
+    instance_name: str = Field(..., description="Unique name for this Vault instance")
+    vault_url: str = Field(..., description="Vault server URL")
+    vault_namespace: Optional[str] = Field(None, description="Vault namespace (Enterprise)")
+    auth_method: str = Field(default="token", description="Authentication method (token, approle)")
+    
+    # Token authentication
+    vault_token: Optional[str] = Field(None, description="Vault token (supports env:, config:, encrypted: prefixes)")
+    
+    # AppRole authentication
+    role_id: Optional[str] = Field(None, description="AppRole Role ID (supports env:, config:, encrypted: prefixes)")
+    secret_id: Optional[str] = Field(None, description="AppRole Secret ID (supports env:, config:, encrypted: prefixes)")
+    
+    # KV configuration
+    kv_mount_point: str = Field(default="secret", description="KV secrets engine mount point")
+    kv_version: int = Field(default=2, description="KV secrets engine version (1 or 2)")
+    
+    # Connection settings
+    verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
+    timeout: int = Field(default=30, description="Request timeout in seconds")
+
+class VaultModule(BaseModel):
+    """HashiCorp Vault configuration module for multi-instance secret management"""
+    # Multiple Vault instances
+    vault_instances: List[VaultInstanceConfig] = Field(
+        default_factory=list,
+        description="List of Vault instances to connect to"
+    )
+    
+    # External configuration
+    vault_config_file: Optional[str] = Field(
+        None,
+        description="Path to external vault configuration JSON file"
+    )
+    
+    secrets_config_file: Optional[str] = Field(
+        None,
+        description="Path to secrets configuration JSON file (for config: references)"
+    )
+    
+    # Encryption settings
+    encryption_enabled: bool = Field(default=True, description="Enable encryption for stored secrets")
+    encryption_key_source: str = Field(
+        default="env:ENCRYPTION_KEY",
+        description="Source of encryption key (env:VAR_NAME, config:path, vault:instance:path#key)"
+    )
+    
+    # Secret resolution settings
+    cache_secrets: bool = Field(default=True, description="Cache resolved secrets in memory")
+    cache_ttl: int = Field(default=300, description="Cache TTL in seconds")
+    
+    # Fallback behavior
+    allow_env_fallback: bool = Field(default=True, description="Allow fallback to environment variables")
+    fail_on_missing_secret: bool = Field(default=True, description="Fail if secret cannot be resolved")
+
 class ModuleCrossReference(BaseModel):
     """Cross-reference to another module for specific functionality"""
     module_name: str = Field(..., description="Name of the referenced module")
@@ -368,6 +428,7 @@ class ModuleConfig(BaseModel):
         ResourceManagementModule,
         NotificationModule,
         BackupRecoveryModule,
+        VaultModule,
         Dict[str, Any]
     ] = Field(..., description="Module-specific configuration")
     
@@ -475,19 +536,27 @@ def save_manifest(manifest: ProjectManifest) -> str:
     
     return manifest_path
 
-def resolve_environment_variables(data: Any, manifest: ProjectManifest) -> Any:
-    """Recursively resolve environment variable placeholders in manifest data"""
+def resolve_environment_variables(data: Any, manifest: ProjectManifest, secret_manager: Optional[SecretManager] = None) -> Any:
+    """Recursively resolve environment variable placeholders, Vault references, and other secret sources"""
     if isinstance(data, dict):
         resolved = {}
         for key, value in data.items():
             # Resolve both keys and values (important for upstream nodes)
-            resolved_key = resolve_environment_variables(key, manifest) if isinstance(key, str) else key
-            resolved_value = resolve_environment_variables(value, manifest)
+            resolved_key = resolve_environment_variables(key, manifest, secret_manager) if isinstance(key, str) else key
+            resolved_value = resolve_environment_variables(value, manifest, secret_manager)
             resolved[resolved_key] = resolved_value
         return resolved
     elif isinstance(data, list):
-        return [resolve_environment_variables(item, manifest) for item in data]
+        return [resolve_environment_variables(item, manifest, secret_manager) for item in data]
     elif isinstance(data, str):
+        # Handle secret manager resolution (vault:, config:, env:, encrypted:)
+        if secret_manager and any(prefix in data for prefix in ["vault:", "config:", "env:", "encrypted:"]):
+            try:
+                return secret_manager.resolve_secret(data)
+            except Exception as e:
+                print(f"Warning: Failed to resolve secret reference '{data}': {str(e)}")
+                return data
+        
         # Handle environment variable substitution
         if "${" in data:
             resolved_value = data
@@ -515,6 +584,9 @@ def resolve_environment_variables(data: Any, manifest: ProjectManifest) -> Any:
                                 break
                         
                         if value is not None:
+                            # If value is a secret reference, resolve it
+                            if secret_manager and isinstance(value, str):
+                                value = secret_manager.resolve_secret(str(value))
                             resolved_value = resolved_value.replace(placeholder, str(value))
                 except (AttributeError, KeyError):
                     # Keep original placeholder if resolution fails
@@ -544,14 +616,40 @@ def apply_environment_overrides(module: ModuleConfig, manifest: ProjectManifest)
     return module
 
 def get_resolved_manifest(project_id: str, resolve_env: bool = False) -> Optional[ProjectManifest]:
-    """Load a manifest and optionally resolve environment variables"""
+    """Load a manifest and optionally resolve environment variables and secrets"""
     manifest = load_manifest(project_id)
     if not manifest or not resolve_env:
         return manifest
     
+    # Initialize secret manager if Vault module exists
+    secret_manager = None
+    for module in manifest.modules:
+        if module.module_type == ModuleType.VAULT:
+            try:
+                secret_manager = get_secret_manager(
+                    config_file_path=module.config.get("secrets_config_file"),
+                    force_new=True
+                )
+                
+                # Add Vault instances
+                for vault_config in module.config.get("vault_instances", []):
+                    secret_manager.add_vault_instance_from_config(vault_config.dict() if hasattr(vault_config, 'dict') else vault_config)
+                
+                # Load external config if specified
+                if module.config.get("vault_config_file"):
+                    vault_config_path = module.config["vault_config_file"]
+                    if os.path.exists(vault_config_path):
+                        with open(vault_config_path, 'r') as f:
+                            external_config = json.load(f)
+                        for vault_config in external_config.get("vault_instances", []):
+                            secret_manager.add_vault_instance_from_config(vault_config)
+            except Exception as e:
+                print(f"Warning: Failed to initialize secret manager: {str(e)}")
+            break
+    
     # Convert to dict, resolve variables, and convert back
     manifest_dict = manifest.model_dump()
-    resolved_dict = resolve_environment_variables(manifest_dict, manifest)
+    resolved_dict = resolve_environment_variables(manifest_dict, manifest, secret_manager)
     
     # Apply environment overrides to modules
     if 'modules' in resolved_dict:
@@ -1653,9 +1751,182 @@ async def get_available_module_types():
             {"type": ModuleType.DEPLOYMENT, "description": "Deployment strategy and environment configuration"},
             {"type": ModuleType.RESOURCE_MANAGEMENT, "description": "Resource allocation and scaling configuration"},
             {"type": ModuleType.NOTIFICATIONS, "description": "Notification and alerting configuration"},
-            {"type": ModuleType.BACKUP_RECOVERY, "description": "Backup and disaster recovery configuration"}
+            {"type": ModuleType.BACKUP_RECOVERY, "description": "Backup and disaster recovery configuration"},
+            {"type": ModuleType.VAULT, "description": "HashiCorp Vault multi-instance secret management configuration"}
         ]
     }
+
+# ==================== VAULT & SECRET MANAGEMENT ENDPOINTS ====================
+
+@app.post("/vault/initialize")
+async def initialize_vault_system(
+    project_id: str,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Initialize Vault system for a project (superuser only)"""
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    # Find Vault module
+    vault_module = None
+    for module in manifest.modules:
+        if module.module_type == ModuleType.VAULT:
+            vault_module = module
+            break
+    
+    if not vault_module:
+        raise HTTPException(status_code=404, detail="No Vault module configured in manifest")
+    
+    # Initialize secret manager
+    secret_manager = get_secret_manager(
+        config_file_path=vault_module.config.get("secrets_config_file"),
+        force_new=True
+    )
+    
+    # Add all Vault instances
+    initialized_instances = []
+    for vault_config in vault_module.config.get("vault_instances", []):
+        try:
+            vault_dict = vault_config.dict() if hasattr(vault_config, 'dict') else vault_config
+            instance_name = secret_manager.add_vault_instance_from_config(vault_dict)
+            initialized_instances.append(instance_name)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to initialize Vault instance '{vault_config.get('instance_name')}': {str(e)}"
+            }
+    
+    # Load external vault config if specified
+    if vault_module.config.get("vault_config_file"):
+        try:
+            vault_config_path = vault_module.config["vault_config_file"]
+            if os.path.exists(vault_config_path):
+                with open(vault_config_path, 'r') as f:
+                    external_config = json.load(f)
+                
+                for vault_config in external_config.get("vault_instances", []):
+                    instance_name = secret_manager.add_vault_instance_from_config(vault_config)
+                    initialized_instances.append(instance_name)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to load external vault config: {str(e)}"
+            }
+    
+    return {
+        "success": True,
+        "project_id": project_id,
+        "initialized_instances": initialized_instances,
+        "total_instances": len(initialized_instances)
+    }
+
+@app.get("/vault/health")
+async def check_vault_health(
+    project_id: str,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Check health of all Vault instances for a project (superuser only)"""
+    manifest = load_manifest(project_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {project_id}")
+    
+    # Initialize secret manager and Vault instances
+    init_response = await initialize_vault_system(project_id, is_superuser=True)
+    if not init_response.get("success"):
+        raise HTTPException(status_code=500, detail=init_response.get("error"))
+    
+    secret_manager = get_secret_manager()
+    health_results = secret_manager.vault_manager.health_check_all()
+    
+    return {
+        "project_id": project_id,
+        "vault_instances": health_results,
+        "total_instances": len(health_results),
+        "all_healthy": all(v.get("healthy", False) for v in health_results.values())
+    }
+
+@app.post("/vault/read-secret")
+async def read_vault_secret(
+    project_id: str,
+    instance_name: str,
+    secret_path: str,
+    key: Optional[str] = None,
+    version: Optional[int] = None,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Read a secret from a specific Vault instance (superuser only)"""
+    # Initialize Vault system
+    init_response = await initialize_vault_system(project_id, is_superuser=True)
+    if not init_response.get("success"):
+        raise HTTPException(status_code=500, detail=init_response.get("error"))
+    
+    secret_manager = get_secret_manager()
+    
+    try:
+        secret_value = secret_manager.vault_manager.read_secret(
+            instance_name=instance_name,
+            path=secret_path,
+            key=key,
+            version=version
+        )
+        
+        return {
+            "project_id": project_id,
+            "instance_name": instance_name,
+            "secret_path": secret_path,
+            "key": key,
+            "value": secret_value
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read secret: {str(e)}")
+
+@app.post("/encryption/generate-key")
+async def generate_encryption_key(
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Generate a new encryption key (superuser only)"""
+    from encryption_utils import EncryptionManager
+    key = EncryptionManager.generate_key()
+    
+    return {
+        "encryption_key": key,
+        "message": "Store this key securely as ENCRYPTION_KEY environment variable"
+    }
+
+@app.post("/encryption/encrypt")
+async def encrypt_value(
+    plaintext: str,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Encrypt a plaintext value (superuser only)"""
+    try:
+        encryption_manager = get_encryption_manager()
+        encrypted = encryption_manager.encrypt(plaintext)
+        
+        return {
+            "plaintext": plaintext,
+            "encrypted": encrypted
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/encryption/decrypt")
+async def decrypt_value(
+    ciphertext: str,
+    is_superuser: bool = Depends(authenticate_superuser)
+):
+    """Decrypt an encrypted value (superuser only)"""
+    try:
+        encryption_manager = get_encryption_manager()
+        decrypted = encryption_manager.decrypt(ciphertext)
+        
+        return {
+            "ciphertext": ciphertext,
+            "decrypted": decrypted
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Decryption failed: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

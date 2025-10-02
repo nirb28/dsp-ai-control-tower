@@ -175,3 +175,9 @@ cython_debug/
 
 # DS
 opa.exe
+
+# Vault and Secrets - DO NOT COMMIT
+vault_config.json
+secrets_config.json
+.vault-token
+*.vault-token

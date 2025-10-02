@@ -5,6 +5,38 @@
   "environment": "development",
   "modules": [
     {
+      "module_type": "vault",
+      "name": "vault-manager",
+      "config": {
+        "vault_instances": [
+          {
+            "instance_name": "prod-vault",
+            "vault_url": "https://vault-prod.example.com:8200",
+            "vault_namespace": "ai-projects",
+            "auth_method": "approle",
+            "role_id": "env:PROD_VAULT_ROLE_ID",
+            "secret_id": "env:PROD_VAULT_SECRET_ID",
+            "kv_mount_point": "secret",
+            "kv_version": 2,
+            "verify_ssl": true
+          },
+          {
+            "instance_name": "dev-vault",
+            "vault_url": "http://localhost:8200",
+            "auth_method": "token",
+            "vault_token": "myroot",
+            "kv_mount_point": "secret",
+            "kv_version": 2,
+            "verify_ssl": false
+          }
+        ],
+        "secrets_config_file": "secrets_config.json",
+        "encryption_enabled": false,
+        "cache_secrets": true,
+        "cache_ttl": 300
+      }
+    },    
+    {
       "module_type": "jwt_config",
       "name": "simple-auth",
       "config": {
