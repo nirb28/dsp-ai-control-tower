@@ -617,7 +617,41 @@ def resolve_environment_variables(data: Any, manifest: ProjectManifest, secret_m
         if "${" in data:
             resolved_value = data
             
-            # Handle ${environments.${environment}.key} pattern
+            # Handle ${environments.STATIC_NAME.key} pattern (e.g., ${environments.common.secrets.key})
+            static_env_pattern = r'\$\{environments\.([a-zA-Z0-9_-]+)\.([^}]+)\}'
+            static_matches = re.findall(static_env_pattern, resolved_value)
+            for env_name, key_path in static_matches:
+                # Skip if this is the ${environment} variable itself
+                if env_name == "${environment}":
+                    continue
+                    
+                placeholder = f"${{environments.{env_name}.{key_path}}}"
+                
+                # Navigate to the environment value
+                try:
+                    if hasattr(manifest, 'environments') and manifest.environments:
+                        env_data = manifest.environments.get(env_name, {})
+                        
+                        # Split the key path (e.g., "secrets.jwt_secret_key")
+                        key_parts = key_path.split('.')
+                        value = env_data
+                        for part in key_parts:
+                            if isinstance(value, dict) and part in value:
+                                value = value[part]
+                            else:
+                                value = None
+                                break
+                        
+                        if value is not None:
+                            # If value is a secret reference, resolve it
+                            if secret_manager and isinstance(value, str):
+                                value = secret_manager.resolve_secret(str(value))
+                            resolved_value = resolved_value.replace(placeholder, str(value))
+                except (AttributeError, KeyError):
+                    # Keep original placeholder if resolution fails
+                    pass
+            
+            # Handle ${environments.${environment}.key} pattern (dynamic environment)
             env_pattern = r'\$\{environments\.\$\{environment\}\.([^}]+)\}'
             matches = re.findall(env_pattern, resolved_value)
             for match in matches:
@@ -678,25 +712,48 @@ def get_resolved_manifest(project_id: str, resolve_env: bool = False) -> Optiona
     for module in manifest.modules:
         if module.module_type == ModuleType.VAULT:
             try:
+                # Access config as Pydantic model attributes
+                vault_config = module.config
+                
+                # Get secrets config file path
+                secrets_config_file = getattr(vault_config, 'secrets_config_file', None)
+                
                 secret_manager = get_secret_manager(
-                    config_file_path=module.config.get("secrets_config_file"),
+                    config_file_path=secrets_config_file,
                     force_new=True
                 )
                 
-                # Add Vault instances
-                for vault_config in module.config.get("vault_instances", []):
-                    secret_manager.add_vault_instance_from_config(vault_config.dict() if hasattr(vault_config, 'dict') else vault_config)
+                # Add Vault instances (skip failed ones)
+                vault_instances = getattr(vault_config, 'vault_instances', [])
+                for vault_inst_config in vault_instances:
+                    try:
+                        vault_dict = vault_inst_config.dict() if hasattr(vault_inst_config, 'dict') else vault_inst_config
+                        secret_manager.add_vault_instance_from_config(vault_dict)
+                        print(f"✓ Initialized Vault instance: {vault_dict.get('instance_name', 'unknown')}")
+                    except Exception as vault_error:
+                        instance_name = vault_dict.get('instance_name', 'unknown') if 'vault_dict' in locals() else 'unknown'
+                        print(f"⚠ Skipping Vault instance '{instance_name}': {str(vault_error)}")
                 
                 # Load external config if specified
-                if module.config.get("vault_config_file"):
-                    vault_config_path = module.config["vault_config_file"]
-                    if os.path.exists(vault_config_path):
-                        with open(vault_config_path, 'r') as f:
-                            external_config = json.load(f)
-                        for vault_config in external_config.get("vault_instances", []):
-                            secret_manager.add_vault_instance_from_config(vault_config)
+                vault_config_file = getattr(vault_config, 'vault_config_file', None)
+                if vault_config_file and os.path.exists(vault_config_file):
+                    with open(vault_config_file, 'r') as f:
+                        external_config = json.load(f)
+                    for vault_config_data in external_config.get("vault_instances", []):
+                        secret_manager.add_vault_instance_from_config(vault_config_data)
             except Exception as e:
-                print(f"Warning: Failed to initialize secret manager: {str(e)}")
+                print(f"⚠ Warning: Failed to initialize secret manager: {str(e)}")
+                # Don't fail completely - secret manager might still work for config: references
+                if secret_manager is None:
+                    # Try to create a basic secret manager for config file resolution
+                    try:
+                        secret_manager = get_secret_manager(
+                            config_file_path=secrets_config_file if 'secrets_config_file' in locals() else None,
+                            force_new=True
+                        )
+                        print("✓ Created basic secret manager for config file resolution")
+                    except:
+                        pass
             break
     
     # Resolve environment variables in-place on the manifest dict

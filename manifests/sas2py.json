@@ -144,7 +144,7 @@
                 "uri": "/openai/v1/chat/completions",
                 "host": "api.groq.com",
                 "headers": {
-                  "Authorization": "Bearer ",
+                  "Authorization": "Bearer ${environments.common.secrets.groq_api_key}",
                   "Accept-Encoding": "identity"
                 }                
               },
@@ -209,7 +209,7 @@
                 "uri": "/openai/v1/chat/completions",
                 "host": "api.groq.com",
                 "headers": {
-                  "Authorization": "Bearer ",
+                  "Authorization": "Bearer ${environments.common.secrets.groq_api_key}",
                   "Accept-Encoding": "identity"
                 }
               },
@@ -225,6 +225,11 @@
     }
   ],
   "environments": {
+    "common": {
+      "secrets": {
+        "groq_api_key": "config:api_keys.groq"
+      }
+    },
     "development": {
       "secrets": {
         "jwt_secret_key": "your-secret-key-here"
