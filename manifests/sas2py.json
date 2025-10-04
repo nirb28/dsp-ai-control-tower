@@ -79,6 +79,21 @@
       "dependencies": ["convert", "simple-auth"],
       "config": {
         "gateway_type": "apisix",
+        "consumer": {
+          "username": "consumer",
+          "desc": "Consumer for SAS2PY project",
+          "plugins": {
+            "jwt-auth": {
+              "key": "sas2py-key",
+              "secret": "${environments.${environment}.secrets.jwt_secret_key}"
+            }
+          }
+        },
+        "service": {
+          "id": "service",
+          "name": "api-service",
+          "desc": "API Service for SAS to Python Code Conversion"
+        },
         "routes": [
           {
             "name": "convert",
@@ -102,7 +117,7 @@
                   {
                     "name": "converter",
                     "template": {
-                      "model": "llama-3.1-70b-versatile",
+                      "model": "llama-3.1-8b-instant",
                       "messages": [
                         {
                           "role": "system",
@@ -118,7 +133,11 @@
                 ]
               },
               "proxy-rewrite": {
-                "uri": "/openai/v1/chat/completions"
+                "uri": "/openai/v1/chat/completions",
+                "host": "api.groq.com",
+                "headers": {
+                  "Authorization": "Bearer "
+                }                
               }
             }
           }
@@ -184,7 +203,7 @@
         "jwt_secret_key": "dev-secret-key"
       },
       "urls": {
-        "groq_base_url": "https://api.groq.com",
+        "groq_base_url": "api.groq.com",
         "api_base_url": "http://localhost:8000",
         "jwt_service_url": "http://localhost:5000"
       }
@@ -194,7 +213,7 @@
         "jwt_secret_key": "${STAGING_JWT_SECRET}"
       },
       "urls": {
-        "groq_base_url": "https://api.groq.com",
+        "groq_base_url": "api.groq.com",
         "api_base_url": "https://staging-api.example.com",
         "jwt_service_url": "https://staging-jwt.example.com"
       }
@@ -204,7 +223,7 @@
         "jwt_secret_key": "${PROD_JWT_SECRET}"
       },
       "urls": {
-        "groq_base_url": "https://api.groq.com",
+        "groq_base_url": "api.groq.com",
         "api_base_url": "https://api.example.com",
         "jwt_service_url": "https://jwt.example.com"
       }

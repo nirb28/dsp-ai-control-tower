@@ -233,6 +233,8 @@ class APISIXGatewayModule(BaseModel):
     # Core configurations
     routes: List[APISIXRoute] = Field(default_factory=list, description="Route configurations")
     upstreams: List[APISIXUpstream] = Field(default_factory=list, description="Upstream service configurations")
+    consumer: Optional[Dict[str, Any]] = Field(None, description="APISIX consumer configuration")
+    service: Optional[Dict[str, Any]] = Field(None, description="APISIX service configuration")
     
     # Global plugins that apply to all routes
     global_plugins: List[APISIXPlugin] = Field(default_factory=list, description="Global plugins")
