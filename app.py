@@ -157,12 +157,19 @@ class ModuleStatus(str, Enum):
     DEVELOPMENT = "development"
 
 class JWTConfigModule(BaseModel):
-    secret_key: str = Field(..., description="JWT secret key")
+    # Core JWT fields (original)
+    secret_key: Optional[str] = Field(None, description="JWT secret key")
     algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     expiration_minutes: int = Field(default=30, description="Token expiration time in minutes")
     issuer: Optional[str] = Field(None, description="JWT issuer")
     audience: Optional[str] = Field(None, description="JWT audience")
     refresh_token_enabled: bool = Field(default=True, description="Enable refresh tokens")
+    
+    # Extended fields for DSP AI JWT service integration
+    id: Optional[str] = Field(None, description="JWT config identifier")
+    owner: Optional[str] = Field(None, description="Config owner/team")
+    service_url: Optional[str] = Field(None, description="JWT service URL for token generation/validation")
+    claims: Optional[Dict[str, Any]] = Field(None, description="Static and dynamic claims configuration")
     
 class RAGConfigModule(BaseModel):
     vector_store_type: str = Field(..., description="Type of vector store (faiss, pinecone, etc.)")
@@ -437,9 +444,56 @@ class ModuleConfig(BaseModel):
     @model_validator(mode='before')
     @classmethod
     def validate_config(cls, data: Any) -> Any:
-        """Custom validator to handle api_gateway discrimination"""
-        # Just return data as-is, let Pydantic's Union matching handle it
-        # The order in the Union (APISIXGatewayModule before APIGatewayModule) matters
+        """Custom validator to ensure config matches module_type"""
+        if not isinstance(data, dict):
+            return data
+        
+        module_type = data.get('module_type')
+        config = data.get('config')
+        
+        if not module_type or not config:
+            return data
+        
+        # Map module types to their config classes
+        type_to_config = {
+            'jwt_config': JWTConfigModule,
+            'rag_config': RAGConfigModule,
+            'api_gateway': APIGatewayModule,
+            'inference_endpoint': InferenceEndpointModule,
+            'security': SecurityModule,
+            'monitoring': MonitoringModule,
+            'model_registry': ModelRegistryModule,
+            'data_pipeline': DataPipelineModule,
+            'deployment': DeploymentModule,
+            'resource_management': ResourceManagementModule,
+            'notifications': NotificationModule,
+            'backup_recovery': BackupRecoveryModule,
+            'vault': VaultModule,
+        }
+        
+        # Special handling for api_gateway - check if it's APISIX
+        if module_type == 'api_gateway' and isinstance(config, dict):
+            if config.get('gateway_type') == 'apisix':
+                # Validate as APISIX config
+                try:
+                    data['config'] = APISIXGatewayModule.model_validate(config)
+                except Exception:
+                    pass  # Fall back to Union matching
+            else:
+                # Validate as generic API gateway
+                try:
+                    data['config'] = APIGatewayModule.model_validate(config)
+                except Exception:
+                    pass  # Fall back to Union matching
+        elif module_type in type_to_config:
+            # Validate config against the expected type
+            config_class = type_to_config[module_type]
+            try:
+                data['config'] = config_class.model_validate(config)
+            except Exception:
+                # If validation fails, keep original and let Union matching handle it
+                pass
+        
         return data
     
     model_config = {
@@ -612,10 +666,6 @@ def resolve_environment_variables(data: Any, manifest: ProjectManifest, secret_m
     else:
         return data
 
-def apply_environment_overrides(module: ModuleConfig, manifest: ProjectManifest) -> ModuleConfig:
-    """Apply environment-specific overrides to a module configuration (deprecated - kept for compatibility)"""
-    # No-op function since environment_overrides field has been removed
-    return module
 
 def get_resolved_manifest(project_id: str, resolve_env: bool = False) -> Optional[ProjectManifest]:
     """Load a manifest and optionally resolve environment variables and secrets"""
@@ -649,17 +699,25 @@ def get_resolved_manifest(project_id: str, resolve_env: bool = False) -> Optiona
                 print(f"Warning: Failed to initialize secret manager: {str(e)}")
             break
     
-    # Convert to dict, resolve variables, and convert back
+    # Resolve environment variables in-place on the manifest dict
     manifest_dict = manifest.model_dump()
     resolved_dict = resolve_environment_variables(manifest_dict, manifest, secret_manager)
     
-    # Apply environment overrides to modules
+    # Reconstruct modules preserving their types
+    # We need to manually reconstruct each module to avoid Union type confusion
     if 'modules' in resolved_dict:
+        resolved_modules = []
         for i, module_data in enumerate(resolved_dict['modules']):
-            module = ModuleConfig.model_validate(module_data)
-            module_with_overrides = apply_environment_overrides(module, manifest)
-            resolved_dict['modules'][i] = module_with_overrides.model_dump()
+            # Get the original module to preserve its type
+            original_module = manifest.modules[i]
+            # Update only the config with resolved values
+            original_dict = original_module.model_dump()
+            original_dict['config'] = module_data.get('config', original_dict['config'])
+            # Reconstruct the module with the same type
+            resolved_modules.append(ModuleConfig.model_validate(original_dict))
+        resolved_dict['modules'] = resolved_modules
     
+    # Now validate the full manifest
     return ProjectManifest.model_validate(resolved_dict)
 
 def get_resolved_module(project_id: str, module_name: str, resolve_env: bool = False) -> Optional[ModuleConfig]:
@@ -681,14 +739,15 @@ def get_resolved_module(project_id: str, module_name: str, resolve_env: bool = F
     if not resolve_env:
         return target_module
     
-    # Apply environment overrides
-    module_with_overrides = apply_environment_overrides(target_module, manifest)
-    
     # Resolve environment variables
-    module_dict = module_with_overrides.model_dump()
+    module_dict = target_module.model_dump()
     resolved_dict = resolve_environment_variables(module_dict, manifest)
     
-    return ModuleConfig.model_validate(resolved_dict)
+    # Preserve the original module structure, only update config
+    original_dict = target_module.model_dump()
+    original_dict['config'] = resolved_dict.get('config', original_dict['config'])
+    
+    return ModuleConfig.model_validate(original_dict)
 
 def analyze_cross_references(modules: List[ModuleConfig]) -> Dict[str, Any]:
     """Analyze module capabilities (deprecated - cross_references removed)"""
