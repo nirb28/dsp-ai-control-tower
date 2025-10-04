@@ -135,14 +135,23 @@
                       ]
                     }
                   }
-                ]
+                ],
+                "_meta": {
+                  "priority": 2520
+                }
               },
               "proxy-rewrite": {
                 "uri": "/openai/v1/chat/completions",
                 "host": "api.groq.com",
                 "headers": {
-                  "Authorization": "Bearer "
+                  "Authorization": "Bearer ",
+                  "Accept-Encoding": "identity"
                 }                
+              },
+              "response-rewrite": {
+                "headers": {
+                  "remove": ["Content-Encoding"]
+                }
               }
             }
           }
@@ -191,10 +200,23 @@
                       ]
                     }
                   }
-                ]
+                ],
+                "_meta": {
+                  "priority": 2520
+                }
               },
               "proxy-rewrite": {
-                "uri": "/openai/v1/chat/completions"
+                "uri": "/openai/v1/chat/completions",
+                "host": "api.groq.com",
+                "headers": {
+                  "Authorization": "Bearer ",
+                  "Accept-Encoding": "identity"
+                }
+              },
+              "response-rewrite": {
+                "headers": {
+                  "remove": ["Content-Encoding"]
+                }
               }
             }
           }
