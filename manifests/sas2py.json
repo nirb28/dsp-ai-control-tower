@@ -79,9 +79,26 @@
       }
     },
     {
+      "module_type": "monitoring",
+      "name": "langfuse-observability",
+      "config": {
+        "provider": "langfuse",
+        "host": "${environments.${environment}.urls.langfuse_host}",
+        "public_key": "${environments.${environment}.secrets.langfuse_public_key}",
+        "secret_key": "${environments.${environment}.secrets.langfuse_secret_key}",
+        "project_name": "sas2py",
+        "sample_rate": 1.0,
+        "metadata": {
+          "service": "sas2py",
+          "environment": "${environment}",
+          "version": "1.0.0"
+        }
+      }
+    },
+    {
       "module_type": "api_gateway",
       "name": "apisix-convert-route",
-      "dependencies": ["convert", "simple-auth"],
+      "dependencies": ["convert", "simple-auth", "langfuse-observability"],
       "config": {
         "gateway_type": "apisix",
         "consumer": {
@@ -117,6 +134,26 @@
             },
             "plugins": {
               "jwt-auth": {},
+              "request-id": {
+                "header_name": "X-Request-Id",
+                "include_in_response": true,
+                "algorithm": "uuid"
+              },
+              "prometheus": {
+                "prefer_name": true
+              },
+              "http-logger": {
+                "uri": "${environments.${environment}.urls.langfuse_host}/api/public/ingestion",
+                "auth_header": "Basic ${environments.${environment}.secrets.langfuse_public_key}:${environments.${environment}.secrets.langfuse_secret_key}",
+                "batch_max_size": 100,
+                "inactive_timeout": 3,
+                "buffer_duration": 3,
+                "max_retry_count": 3,
+                "retry_delay": 1,
+                "include_req_body": true,
+                "include_resp_body": true,
+                "concat_method": "json"
+              },
               "ai-prompt-template": {
                 "templates": [
                   {
@@ -182,6 +219,26 @@
             },
             "plugins": {
               "jwt-auth": {},
+              "request-id": {
+                "header_name": "X-Request-Id",
+                "include_in_response": true,
+                "algorithm": "uuid"
+              },
+              "prometheus": {
+                "prefer_name": true
+              },
+              "http-logger": {
+                "uri": "${environments.${environment}.urls.langfuse_host}/api/public/ingestion",
+                "auth_header": "Basic ${environments.${environment}.secrets.langfuse_public_key}:${environments.${environment}.secrets.langfuse_secret_key}",
+                "batch_max_size": 100,
+                "inactive_timeout": 3,
+                "buffer_duration": 3,
+                "max_retry_count": 3,
+                "retry_delay": 1,
+                "include_req_body": true,
+                "include_resp_body": true,
+                "concat_method": "json"
+              },
               "ai-prompt-template": {
                 "templates": [
                   {
@@ -232,32 +289,41 @@
     },
     "development": {
       "secrets": {
-        "jwt_secret_key": "your-secret-key-here"
+        "jwt_secret_key": "your-secret-key-here",
+        "langfuse_public_key": "${LANGFUSE_PUBLIC_KEY}",
+        "langfuse_secret_key": "${LANGFUSE_SECRET_KEY}"
       },
       "urls": {
         "groq_base_url": "api.groq.com",
         "api_base_url": "http://localhost:8000",
-        "jwt_service_url": "http://localhost:5000"
+        "jwt_service_url": "http://localhost:5000",
+        "langfuse_host": "https://cloud.langfuse.com"
       }
     },
     "staging": {
       "secrets": {
-        "jwt_secret_key": "${STAGING_JWT_SECRET}"
+        "jwt_secret_key": "${STAGING_JWT_SECRET}",
+        "langfuse_public_key": "${LANGFUSE_PUBLIC_KEY}",
+        "langfuse_secret_key": "${LANGFUSE_SECRET_KEY}"
       },
       "urls": {
         "groq_base_url": "api.groq.com",
         "api_base_url": "https://staging-api.example.com",
-        "jwt_service_url": "http://localhost:5000"
+        "jwt_service_url": "http://localhost:5000",
+        "langfuse_host": "https://cloud.langfuse.com"
       }
     },
     "production": {
       "secrets": {
-        "jwt_secret_key": "${PROD_JWT_SECRET}"
+        "jwt_secret_key": "${PROD_JWT_SECRET}",
+        "langfuse_public_key": "${LANGFUSE_PUBLIC_KEY}",
+        "langfuse_secret_key": "${LANGFUSE_SECRET_KEY}"
       },
       "urls": {
         "groq_base_url": "api.groq.com",
         "api_base_url": "https://api.example.com",
-        "jwt_service_url": "http://localhost:5000"
+        "jwt_service_url": "http://localhost:5000",
+        "langfuse_host": "https://cloud.langfuse.com"
       }
     }
   }
