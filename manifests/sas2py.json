@@ -142,17 +142,27 @@
               "prometheus": {
                 "prefer_name": true
               },
-              "http-logger": {
-                "uri": "${environments.${environment}.urls.langfuse_host}/api/public/ingestion",
-                "auth_header": "Basic ${environments.${environment}.secrets.langfuse_public_key}:${environments.${environment}.secrets.langfuse_secret_key}",
-                "batch_max_size": 100,
-                "inactive_timeout": 3,
-                "buffer_duration": 3,
-                "max_retry_count": 3,
-                "retry_delay": 1,
-                "include_req_body": true,
-                "include_resp_body": true,
-                "concat_method": "json"
+              "opentelemetry": {
+                "resource": {
+                  "service.name": "sas2py-convert",
+                  "service.version": "1.0.0",
+                  "deployment.environment": "${environment}",
+                  "langfuse.public_key": "${environments.${environment}.secrets.langfuse_public_key}"
+                },
+                "collector": {
+                  "address": "${environments.${environment}.urls.langfuse_otel_endpoint}",
+                  "request_timeout": 3,
+                  "request_headers": {
+                    "Authorization": "Basic ${environments.${environment}.secrets.langfuse_public_key}:${environments.${environment}.secrets.langfuse_secret_key}"
+                  }
+                },
+                "batch_span_processor": {
+                  "drop_on_queue_full": false,
+                  "max_queue_size": 2048,
+                  "batch_timeout": 5,
+                  "max_export_batch_size": 256,
+                  "inactive_timeout": 2
+                }
               },
               "ai-prompt-template": {
                 "templates": [
@@ -227,17 +237,27 @@
               "prometheus": {
                 "prefer_name": true
               },
-              "http-logger": {
-                "uri": "${environments.${environment}.urls.langfuse_host}/api/public/ingestion",
-                "auth_header": "Basic ${environments.${environment}.secrets.langfuse_public_key}:${environments.${environment}.secrets.langfuse_secret_key}",
-                "batch_max_size": 100,
-                "inactive_timeout": 3,
-                "buffer_duration": 3,
-                "max_retry_count": 3,
-                "retry_delay": 1,
-                "include_req_body": true,
-                "include_resp_body": true,
-                "concat_method": "json"
+              "opentelemetry": {
+                "resource": {
+                  "service.name": "sas2py-test",
+                  "service.version": "1.0.0",
+                  "deployment.environment": "${environment}",
+                  "langfuse.public_key": "${environments.${environment}.secrets.langfuse_public_key}"
+                },
+                "collector": {
+                  "address": "${environments.${environment}.urls.langfuse_otel_endpoint}",
+                  "request_timeout": 3,
+                  "request_headers": {
+                    "Authorization": "Basic ${environments.${environment}.secrets.langfuse_public_key}:${environments.${environment}.secrets.langfuse_secret_key}"
+                  }
+                },
+                "batch_span_processor": {
+                  "drop_on_queue_full": false,
+                  "max_queue_size": 2048,
+                  "batch_timeout": 5,
+                  "max_export_batch_size": 256,
+                  "inactive_timeout": 2
+                }
               },
               "ai-prompt-template": {
                 "templates": [
@@ -297,7 +317,8 @@
         "groq_base_url": "api.groq.com",
         "api_base_url": "http://localhost:8000",
         "jwt_service_url": "http://localhost:5000",
-        "langfuse_host": "https://cloud.langfuse.com"
+        "langfuse_host": "https://cloud.langfuse.com",
+        "langfuse_otel_endpoint": "https://cloud.langfuse.com/api/public/otel/v1/traces"
       }
     },
     "staging": {
@@ -310,7 +331,8 @@
         "groq_base_url": "api.groq.com",
         "api_base_url": "https://staging-api.example.com",
         "jwt_service_url": "http://localhost:5000",
-        "langfuse_host": "https://cloud.langfuse.com"
+        "langfuse_host": "https://cloud.langfuse.com",
+        "langfuse_otel_endpoint": "https://cloud.langfuse.com/api/public/otel/v1/traces"
       }
     },
     "production": {
@@ -323,7 +345,8 @@
         "groq_base_url": "api.groq.com",
         "api_base_url": "https://api.example.com",
         "jwt_service_url": "http://localhost:5000",
-        "langfuse_host": "https://cloud.langfuse.com"
+        "langfuse_host": "https://cloud.langfuse.com",
+        "langfuse_otel_endpoint": "https://cloud.langfuse.com/api/public/otel/v1/traces"
       }
     }
   }
