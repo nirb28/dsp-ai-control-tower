@@ -2047,4 +2047,55 @@ async def decrypt_value(
         raise HTTPException(status_code=400, detail=f"Decryption failed: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='DSP AI Control Tower')
+    parser.add_argument('--host', default=os.getenv('HOST', '0.0.0.0'), help='Host to bind to')
+    parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '8000')), help='Port to bind to')
+    parser.add_argument('--https-port', type=int, default=int(os.getenv('HTTPS_PORT', '8443')), help='HTTPS port to bind to')
+    parser.add_argument('--reload', action='store_true', default=os.getenv('RELOAD', 'true').lower() == 'true', help='Enable auto-reload')
+    parser.add_argument('--ssl', action='store_true', default=os.getenv('SSL_ENABLED', 'false').lower() == 'true', help='Enable HTTPS')
+    parser.add_argument('--ssl-cert', default=os.getenv('SSL_CERT_FILE', 'certs/server.crt'), help='SSL certificate file')
+    parser.add_argument('--ssl-key', default=os.getenv('SSL_KEY_FILE', 'certs/server.key'), help='SSL key file')
+    args = parser.parse_args()
+    
+    # Determine port and SSL settings
+    if args.ssl:
+        port = args.https_port
+        ssl_keyfile = args.ssl_key
+        ssl_certfile = args.ssl_cert
+        
+        # Verify SSL files exist
+        if not os.path.exists(ssl_certfile):
+            print(f"Error: SSL certificate not found: {ssl_certfile}")
+            print("Run: python generate_ssl_certs.py")
+            sys.exit(1)
+        if not os.path.exists(ssl_keyfile):
+            print(f"Error: SSL key not found: {ssl_keyfile}")
+            print("Run: python generate_ssl_certs.py")
+            sys.exit(1)
+        
+        print(f"Starting Control Tower with HTTPS on {args.host}:{port}")
+        print(f"  Certificate: {ssl_certfile}")
+        print(f"  Key: {ssl_keyfile}")
+        
+        uvicorn.run(
+            "app:app",
+            host=args.host,
+            port=port,
+            reload=args.reload,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile
+        )
+    else:
+        port = args.port
+        print(f"Starting Control Tower with HTTP on {args.host}:{port}")
+        print("⚠ Warning: Running without HTTPS. Use --ssl for production.")
+        
+        uvicorn.run(
+            "app:app",
+            host=args.host,
+            port=port,
+            reload=args.reload
+        )
