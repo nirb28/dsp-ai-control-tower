@@ -165,6 +165,13 @@ class JWTConfigModule(BaseModel):
     audience: Optional[str] = Field(None, description="JWT audience")
     refresh_token_enabled: bool = Field(default=True, description="Enable refresh tokens")
     
+    # JWE (JSON Web Encryption) configuration for symmetric encryption
+    jwe_enabled: bool = Field(default=False, description="Enable JWE encryption for tokens")
+    jwe_encryption_key: Optional[str] = Field(None, description="Symmetric encryption key for JWE (32 bytes for A256GCM)")
+    jwe_algorithm: str = Field(default="dir", description="Key management algorithm: 'dir' for direct symmetric")
+    jwe_encryption: str = Field(default="A256GCM", description="Content encryption algorithm: A128GCM, A192GCM, A256GCM, A128CBC-HS256, A192CBC-HS384, A256CBC-HS512")
+    jwe_compression: Optional[str] = Field(None, description="Compression algorithm: DEF for deflate, None to disable")
+    
     # Extended fields for DSP AI JWT service integration
     id: Optional[str] = Field(None, description="JWT config identifier")
     owner: Optional[str] = Field(None, description="Config owner/team")
