@@ -6,7 +6,7 @@ import secrets
 from fastapi import FastAPI, HTTPException, Body, Depends, Header, Query
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, model_serializer
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 from enum import Enum
@@ -157,7 +157,7 @@ class ModuleStatus(str, Enum):
     DEVELOPMENT = "development"
 
 class JWTConfigModule(BaseModel):
-    # Core JWT fields (original)
+    # Core JWT fields
     secret_key: Optional[str] = Field(None, description="JWT secret key")
     algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     expiration_minutes: int = Field(default=30, description="Token expiration time in minutes")
@@ -165,18 +165,14 @@ class JWTConfigModule(BaseModel):
     audience: Optional[str] = Field(None, description="JWT audience")
     refresh_token_enabled: bool = Field(default=True, description="Enable refresh tokens")
     
-    # JWE (JSON Web Encryption) configuration for symmetric encryption
-    jwe_enabled: bool = Field(default=False, description="Enable JWE encryption for tokens")
-    jwe_encryption_key: Optional[str] = Field(None, description="Symmetric encryption key for JWE (32 bytes for A256GCM)")
-    jwe_algorithm: str = Field(default="dir", description="Key management algorithm: 'dir' for direct symmetric")
-    jwe_encryption: str = Field(default="A256GCM", description="Content encryption algorithm: A128GCM, A192GCM, A256GCM, A128CBC-HS256, A192CBC-HS384, A256CBC-HS512")
-    jwe_compression: Optional[str] = Field(None, description="Compression algorithm: DEF for deflate, None to disable")
-    
     # Extended fields for DSP AI JWT service integration
     id: Optional[str] = Field(None, description="JWT config identifier")
     owner: Optional[str] = Field(None, description="Config owner/team")
     service_url: Optional[str] = Field(None, description="JWT service URL for token generation/validation")
     claims: Optional[Dict[str, Any]] = Field(None, description="Static and dynamic claims configuration")
+    
+    # JWE (JSON Web Encryption) configuration - nested format only
+    jwe_config: Optional[Dict[str, Any]] = Field(None, description="JWE encryption configuration")
     
 class RAGConfigModule(BaseModel):
     vector_store_type: str = Field(..., description="Type of vector store (faiss, pinecone, etc.)")
