@@ -40,7 +40,7 @@
       "module_type": "jwt_config",
       "name": "simple-auth",
       "config": {
-        "id": "sas2py-jwt-config",
+        "id": "jwt-config",
         "owner": "SAS2PY Team",
         "service_url": "${environments.${environment}.urls.jwt_service_url}",
         "claims": {
@@ -260,7 +260,7 @@
       "module_type": "jwt_config",
       "name": "jwe-auth",
       "config": {
-        "id": "sas2py-jwe-jwt-config",
+        "id": "jwe-jwt-config",
         "owner": "SAS2PY Team",
         "service_url": "${environments.${environment}.urls.jwt_service_url}",
         "jwe_config": {
