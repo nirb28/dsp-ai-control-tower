@@ -381,6 +381,66 @@
           }
         ]
       }
+    },
+    {
+      "module_type": "inference_endpoint",
+      "name": "openai-compatible",
+      "dependencies": ["simple-auth", "apisix-openai-route"],
+      "config": {
+        "model_name": "llama-3.1-70b-versatile",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/v1/chat/completions",
+        "description": "OpenAI-compatible endpoint with no predefined prompt template - accepts full OpenAI chat completion requests"
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "apisix-openai-route",
+      "dependencies": ["openai-compatible", "simple-auth", "langfuse-observability"],
+      "config": {
+        "gateway_type": "apisix",
+        "routes": [
+          {
+            "name": "openai-chat-completions",
+            "uri": "/sas2py/v1/chat/completions",
+            "methods": ["POST"],
+            "upstream": {
+              "type": "roundrobin",
+              "nodes": {
+                "${environments.${environment}.urls.groq_base_url}": 1
+              },
+              "timeout": {
+                "connect": 60,
+                "send": 60,
+                "read": 60
+              }
+            },
+            "plugins": {
+              "jwt-auth": {},
+              "request-id": {
+                "header_name": "X-Request-Id",
+                "include_in_response": true,
+                "algorithm": "uuid"
+              },
+              "prometheus": {
+                "prefer_name": true
+              },
+              "proxy-rewrite": {
+                "uri": "/openai/v1/chat/completions",
+                "host": "api.groq.com",
+                "headers": {
+                  "Authorization": "Bearer ${environments.common.secrets.groq_api_key}",
+                  "Accept-Encoding": "identity"
+                }
+              },
+              "response-rewrite": {
+                "headers": {
+                  "remove": ["Content-Encoding"]
+                }
+              }
+            }
+          }
+        ]
+      }
     }
   ],
   "environments": {
