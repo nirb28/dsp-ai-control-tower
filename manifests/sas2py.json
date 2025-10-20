@@ -272,7 +272,12 @@
         },
         "claims": {
           "static": {
-            "key": "sas2py-jwe-consumer-key"
+            "key": "sas2py-jwe-consumer-key",
+            "rate_limit": 100,
+            "project": "sas2py",
+            "environment": "${environment}",
+            "exp_hours": 1,
+            "groq_api_key": "${environments.common.secrets.groq_api_key}"            
           }
         }
       }
@@ -331,6 +336,8 @@
                 "strict": true,
                 "header": "Authorization",
                 "forward_header": "Authorization",
+                "forward_payload": true,
+                "forward_payload_header": "X-JWE-Payload",
                 "debug": true
               },
               "request-id": {
@@ -364,12 +371,20 @@
                   "priority": 2520
                 }
               },
+              "serverless-pre-function": {
+                "phase": "access",
+                "functions": [ 
+                  "return function(conf, ctx) local core = require('apisix.core') core.log.warn('=== JWE API Key Extraction Debug ===', core.json.encode(ctx.headers, true)) local payload_header = core.request.header(ctx, 'X-JWE-Payload') core.log.warn('=== http_x_decrypt_authorization ===', core.json.encode(payload_header, true)) end"
+                ]
+              },
               "proxy-rewrite": {
                 "uri": "/openai/v1/chat/completions",
                 "host": "api.groq.com",
                 "headers": {
-                  "Authorization": "Bearer ${environments.common.secrets.groq_api_key}",
-                  "Accept-Encoding": "identity"
+                  "set": {
+                    "Authorization": "Bearer $http_x_groq_api_key",
+                    "Accept-Encoding": "identity"
+                  }
                 }                
               },
               "response-rewrite": {
