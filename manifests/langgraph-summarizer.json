@@ -1,0 +1,197 @@
+{
+  "project_id": "langgraph-summarizer",
+  "project_name": "LangGraph Document Summarizer",
+  "owner": "AI-Team",
+  "environment": "development",
+  "modules": [
+    {
+      "module_type": "jwt_config",
+      "name": "summarizer-auth",
+      "config": {
+        "id": "summarizer-jwt-config",
+        "owner": "AI-Team",
+        "service_url": "${environments.${environment}.urls.jwt_service_url}",
+        "claims": {
+          "static": {
+            "key": "summarizer-consumer-key",
+            "rate_limit": 100,
+            "project": "langgraph-summarizer",
+            "environment": "${environment}",
+            "exp_hours": 2
+          }
+        }
+      }
+    },
+    {
+      "module_type": "inference_endpoint",
+      "name": "summarize-llm",
+      "dependencies": ["summarizer-auth", "apisix-summarize-route"],
+      "config": {
+        "model_name": "llama-3.1-70b-versatile",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/summarizer/llm",
+        "system_prompt": "You are an expert document summarizer. Provide clear, concise summaries that capture key points.",
+        "max_tokens": 1000,
+        "temperature": 0.3
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "apisix-summarize-route",
+      "dependencies": ["summarize-llm", "summarizer-auth"],
+      "config": {
+        "gateway_type": "apisix",
+        "consumer": {
+          "username": "summarizer-consumer",
+          "desc": "Consumer for LangGraph Summarizer",
+          "plugins": {
+            "jwt-auth": {
+              "key": "summarizer-consumer-key",
+              "secret": "${environments.${environment}.secrets.jwt_secret_key}"
+            }
+          }
+        },
+        "service": {
+          "id": "summarizer-service",
+          "name": "summarizer-api-service",
+          "desc": "API Service for Document Summarization"
+        },
+        "routes": [
+          {
+            "name": "summarize",
+            "uri": "/summarizer/llm",
+            "methods": ["POST"],
+            "upstream": {
+              "type": "roundrobin",
+              "nodes": {
+                "${environments.${environment}.urls.groq_base_url}": 1
+              },
+              "timeout": {
+                "connect": 60,
+                "send": 60,
+                "read": 60
+              }
+            },
+            "plugins": {
+              "jwt-auth": {},
+              "request-id": {
+                "header_name": "X-Request-Id",
+                "include_in_response": true,
+                "algorithm": "uuid"
+              },
+              "prometheus": {
+                "prefer_name": true
+              },
+              "proxy-rewrite": {
+                "uri": "/openai/v1/chat/completions",
+                "host": "api.groq.com",
+                "headers": {
+                  "Authorization": "Bearer ${environments.common.secrets.groq_api_key}",
+                  "Accept-Encoding": "identity"
+                }
+              },
+              "response-rewrite": {
+                "headers": {
+                  "remove": ["Content-Encoding"]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "module_type": "langgraph_workflow",
+      "name": "doc-summarizer-workflow",
+      "dependencies": ["summarizer-auth", "summarize-llm"],
+      "config": {
+        "workflow_name": "document_summarizer",
+        "workflow_type": "sequential",
+        "jwt_module": "summarizer-auth",
+        "inference_modules": ["summarize-llm"],
+        "state_schema": {
+          "document": "string",
+          "chunks": "array",
+          "summaries": "array",
+          "final_summary": "string"
+        },
+        "nodes": [
+          {
+            "id": "split_document",
+            "type": "function",
+            "function": "split_into_chunks",
+            "description": "Split document into manageable chunks",
+            "config": {
+              "chunk_size": 2000,
+              "chunk_overlap": 200
+            }
+          },
+          {
+            "id": "summarize_chunks",
+            "type": "llm",
+            "inference_module": "summarize-llm",
+            "description": "Summarize each chunk using LLM",
+            "prompt_template": "Provide a concise summary of the following text chunk:\n\n{chunk}",
+            "config": {
+              "parallel": true,
+              "max_tokens": 300
+            }
+          },
+          {
+            "id": "combine_summaries",
+            "type": "llm",
+            "inference_module": "summarize-llm",
+            "description": "Combine chunk summaries into final summary",
+            "prompt_template": "Combine the following summaries into a single comprehensive summary:\n\n{summaries}",
+            "config": {
+              "max_tokens": 500
+            }
+          }
+        ],
+        "edges": [
+          {
+            "from": "split_document",
+            "to": "summarize_chunks"
+          },
+          {
+            "from": "summarize_chunks",
+            "to": "combine_summaries"
+          }
+        ],
+        "max_iterations": 10,
+        "timeout_seconds": 300,
+        "enable_checkpointing": false,
+        "retry_on_error": true,
+        "max_retries": 2,
+        "tracing_enabled": true,
+        "log_intermediate_results": true
+      }
+    }
+  ],
+  "environments": {
+    "common": {
+      "secrets": {
+        "groq_api_key": "config:api_keys.groq"
+      }
+    },
+    "development": {
+      "secrets": {
+        "jwt_secret_key": "your-secret-key-here"
+      },
+      "urls": {
+        "groq_base_url": "api.groq.com",
+        "api_base_url": "http://localhost:8080",
+        "jwt_service_url": "http://localhost:5000"
+      }
+    },
+    "production": {
+      "secrets": {
+        "jwt_secret_key": "${PROD_JWT_SECRET}"
+      },
+      "urls": {
+        "groq_base_url": "api.groq.com",
+        "api_base_url": "https://api.example.com",
+        "jwt_service_url": "https://jwt.example.com"
+      }
+    }
+  }
+}
