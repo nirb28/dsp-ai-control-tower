@@ -149,6 +149,7 @@ class ModuleType(str, Enum):
     NOTIFICATIONS = "notifications"
     BACKUP_RECOVERY = "backup_recovery"
     VAULT = "vault"
+    LANGGRAPH_WORKFLOW = "langgraph_workflow"
 
 class ModuleStatus(str, Enum):
     ENABLED = "enabled"
@@ -412,6 +413,49 @@ class VaultModule(BaseModel):
     allow_env_fallback: bool = Field(default=True, description="Allow fallback to environment variables")
     fail_on_missing_secret: bool = Field(default=True, description="Fail if secret cannot be resolved")
 
+class LangGraphWorkflowModule(BaseModel):
+    """LangGraph workflow configuration for prompt chaining and multi-step AI workflows"""
+    workflow_name: str = Field(..., description="Name of the workflow")
+    workflow_type: str = Field(default="sequential", description="Workflow type (sequential, parallel, conditional)")
+    
+    # Node definitions
+    nodes: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of workflow nodes with their configurations"
+    )
+    
+    # Edges define the flow between nodes
+    edges: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of edges connecting nodes in the workflow"
+    )
+    
+    # State schema for the workflow
+    state_schema: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Schema defining the state structure passed between nodes"
+    )
+    
+    # Module references for JWT and inference endpoints
+    jwt_module: Optional[str] = Field(None, description="Name of JWT module for authentication")
+    inference_modules: List[str] = Field(
+        default_factory=list,
+        description="Names of inference endpoint modules to use"
+    )
+    
+    # Execution settings
+    max_iterations: int = Field(default=10, description="Maximum workflow iterations")
+    timeout_seconds: int = Field(default=300, description="Workflow timeout in seconds")
+    enable_checkpointing: bool = Field(default=False, description="Enable workflow state checkpointing")
+    
+    # Error handling
+    retry_on_error: bool = Field(default=True, description="Retry nodes on error")
+    max_retries: int = Field(default=3, description="Maximum retries per node")
+    
+    # Observability
+    tracing_enabled: bool = Field(default=True, description="Enable workflow tracing")
+    log_intermediate_results: bool = Field(default=True, description="Log results from each node")
+
 class ModuleCrossReference(BaseModel):
     """Cross-reference to another module for specific functionality"""
     module_name: str = Field(..., description="Name of the referenced module")
@@ -441,6 +485,7 @@ class ModuleConfig(BaseModel):
         NotificationModule,
         BackupRecoveryModule,
         VaultModule,
+        LangGraphWorkflowModule,
         Dict[str, Any]
     ] = Field(..., description="Module-specific configuration")
     
@@ -472,6 +517,7 @@ class ModuleConfig(BaseModel):
             'notifications': NotificationModule,
             'backup_recovery': BackupRecoveryModule,
             'vault': VaultModule,
+            'langgraph_workflow': LangGraphWorkflowModule,
         }
         
         # Special handling for api_gateway - check if it's APISIX
