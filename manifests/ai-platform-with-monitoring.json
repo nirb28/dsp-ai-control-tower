@@ -1,0 +1,413 @@
+{
+  "project_id": "ai-platform-monitoring",
+  "project_name": "AI Platform with Comprehensive Monitoring",
+  "description": "Production-ready AI platform with Prometheus, Grafana, and full observability",
+  "owner": "Platform-Team",
+  "environment": "production",
+  "version": "1.0.0",
+  "modules": [
+    {
+      "module_type": "jwt_config",
+      "name": "platform-auth",
+      "config": {
+        "id": "platform-jwt-config",
+        "owner": "Platform-Team",
+        "service_url": "${environments.${environment}.urls.jwt_service_url}",
+        "claims": {
+          "static": {
+            "key": "platform-consumer-key",
+            "rate_limit": 1000,
+            "project": "ai-platform-monitoring",
+            "environment": "${environment}",
+            "exp_hours": 24
+          }
+        }
+      },
+      "cross_references": {
+        "monitoring": {
+          "module_name": "prometheus-metrics",
+          "module_type": "monitoring",
+          "purpose": "Track authentication metrics and failures",
+          "required": true
+        }
+      },
+      "metadata": {
+        "monitoring": {
+          "metrics_port": 8080,
+          "metrics_path": "/metrics",
+          "scrape": true,
+          "labels": {
+            "service": "jwt-auth",
+            "tier": "security",
+            "criticality": "critical"
+          }
+        }
+      }
+    },
+    {
+      "module_type": "monitoring",
+      "name": "prometheus-metrics",
+      "description": "Prometheus metrics collection with Grafana dashboards",
+      "config": {
+        "metrics_enabled": true,
+        "logging_level": "INFO",
+        "tracing_enabled": true,
+        "health_check_interval": 15,
+        "alerting_enabled": true,
+        "dashboard_url": "${environments.${environment}.urls.grafana_url}",
+        "prometheus": {
+          "enabled": true,
+          "port": 9090,
+          "scrape_interval": "15s",
+          "retention": "90d",
+          "external_labels": {
+            "cluster": "ai-platform",
+            "environment": "${environment}"
+          },
+          "scrape_configs": [
+            {
+              "job_name": "llm-inference",
+              "scrape_interval": "10s",
+              "metrics_path": "/metrics",
+              "static_configs": [
+                {"targets": ["llm-service:8080"], "labels": {"service": "llm-inference"}}
+              ]
+            },
+            {
+              "job_name": "api-gateway",
+              "metrics_path": "/apisix/prometheus/metrics",
+              "static_configs": [
+                {"targets": ["apisix:9091"], "labels": {"service": "apisix-gateway"}}
+              ]
+            },
+            {
+              "job_name": "jwt-auth",
+              "static_configs": [
+                {"targets": ["jwt-service:8080"], "labels": {"service": "jwt-auth"}}
+              ]
+            }
+          ],
+          "custom_metrics": [
+            {
+              "name": "llm_inference_duration_seconds",
+              "type": "histogram",
+              "description": "LLM inference request duration",
+              "labels": ["model", "provider", "status"],
+              "buckets": [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+            },
+            {
+              "name": "llm_token_usage_total",
+              "type": "counter",
+              "description": "Total tokens consumed",
+              "labels": ["model", "token_type"]
+            },
+            {
+              "name": "llm_request_total",
+              "type": "counter",
+              "description": "Total LLM requests",
+              "labels": ["model", "status", "endpoint"]
+            },
+            {
+              "name": "llm_error_total",
+              "type": "counter",
+              "description": "Total LLM errors",
+              "labels": ["model", "error_type"]
+            }
+          ]
+        },
+        "grafana": {
+          "enabled": true,
+          "url": "${environments.${environment}.urls.grafana_url}",
+          "port": 3000,
+          "datasources": [
+            {
+              "name": "Prometheus",
+              "type": "prometheus",
+              "url": "http://prometheus:9090",
+              "is_default": true
+            },
+            {
+              "name": "Loki",
+              "type": "loki",
+              "url": "http://loki:3100"
+            }
+          ],
+          "dashboards": [
+            {
+              "name": "LLM Performance Overview",
+              "uid": "llm-perf-001",
+              "folder": "AI Platform",
+              "panels": [
+                {
+                  "title": "Request Rate (req/s)",
+                  "type": "graph",
+                  "targets": [{"expr": "rate(llm_request_total[5m])", "legendFormat": "{{model}}"}]
+                },
+                {
+                  "title": "P95 Latency",
+                  "type": "graph",
+                  "targets": [{"expr": "histogram_quantile(0.95, rate(llm_inference_duration_seconds_bucket[5m]))"}]
+                },
+                {
+                  "title": "Error Rate (%)",
+                  "type": "graph",
+                  "targets": [{"expr": "rate(llm_error_total[5m]) / rate(llm_request_total[5m]) * 100"}],
+                  "alert": {
+                    "name": "High LLM Error Rate",
+                    "condition": "value > 5",
+                    "message": "LLM error rate above 5%"
+                  }
+                },
+                {
+                  "title": "Token Usage",
+                  "type": "graph",
+                  "targets": [{"expr": "rate(llm_token_usage_total[1m]) * 60"}]
+                }
+              ]
+            },
+            {
+              "name": "API Gateway Metrics",
+              "uid": "gateway-001",
+              "folder": "AI Platform",
+              "panels": [
+                {
+                  "title": "Gateway Request Rate",
+                  "type": "graph",
+                  "targets": [{"expr": "rate(apisix_http_requests_total[5m])"}]
+                },
+                {
+                  "title": "Gateway Latency",
+                  "type": "graph",
+                  "targets": [{"expr": "histogram_quantile(0.95, rate(apisix_http_latency_bucket[5m]))"}]
+                }
+              ]
+            }
+          ],
+          "alert_channels": [
+            {
+              "name": "Slack Alerts",
+              "type": "slack",
+              "url": "${environments.${environment}.secrets.slack_webhook}",
+              "channel": "#ai-platform-alerts"
+            },
+            {
+              "name": "PagerDuty",
+              "type": "pagerduty",
+              "integration_key": "${environments.${environment}.secrets.pagerduty_key}"
+            }
+          ]
+        },
+        "logging": {
+          "enabled": true,
+          "level": "INFO",
+          "format": "json",
+          "loki": {
+            "url": "http://loki:3100",
+            "labels": {"environment": "${environment}", "cluster": "ai-platform"}
+          }
+        },
+        "tracing": {
+          "enabled": true,
+          "provider": "opentelemetry",
+          "tempo_endpoint": "http://tempo:4317",
+          "sampling_rate": 0.1
+        }
+      },
+      "cross_references": {
+        "notifications": {
+          "module_name": "alert-notifications",
+          "module_type": "notifications",
+          "purpose": "Route alerts to notification channels",
+          "required": true
+        }
+      }
+    },
+    {
+      "module_type": "notifications",
+      "name": "alert-notifications",
+      "description": "Alert routing and notification management",
+      "config": {
+        "slack_enabled": true,
+        "email_enabled": true,
+        "webhook_enabled": false,
+        "notification_channels": {
+          "slack": {
+            "webhook_url": "${environments.${environment}.secrets.slack_webhook}",
+            "default_channel": "#ai-platform-alerts"
+          },
+          "pagerduty": {
+            "integration_key": "${environments.${environment}.secrets.pagerduty_key}"
+          },
+          "email": {
+            "smtp_host": "smtp.example.com",
+            "from": "alerts@example.com",
+            "to": ["ops-team@example.com"]
+          }
+        },
+        "alert_rules": [
+          {
+            "name": "HighErrorRate",
+            "severity": "critical",
+            "condition": "rate(llm_error_total[5m]) / rate(llm_request_total[5m]) > 0.05",
+            "duration": "5m",
+            "channels": ["slack", "pagerduty"],
+            "message": "LLM error rate above 5% for 5 minutes"
+          },
+          {
+            "name": "HighLatency",
+            "severity": "high",
+            "condition": "histogram_quantile(0.95, rate(llm_inference_duration_seconds_bucket[5m])) > 10",
+            "duration": "10m",
+            "channels": ["slack"],
+            "message": "LLM P95 latency above 10 seconds"
+          },
+          {
+            "name": "ServiceDown",
+            "severity": "critical",
+            "condition": "up{job='llm-inference'} == 0",
+            "duration": "1m",
+            "channels": ["slack", "pagerduty", "email"],
+            "message": "LLM inference service is down"
+          }
+        ],
+        "escalation_policies": [
+          {
+            "name": "critical_escalation",
+            "severity": "critical",
+            "steps": [
+              {"delay_minutes": 0, "channels": ["slack", "pagerduty"]},
+              {"delay_minutes": 15, "channels": ["pagerduty", "email"]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "module_type": "inference_endpoint",
+      "name": "llm-inference",
+      "description": "Primary LLM inference endpoint with monitoring",
+      "dependencies": ["platform-auth", "prometheus-metrics"],
+      "config": {
+        "model_name": "gpt-4",
+        "endpoint_url": "${environments.${environment}.urls.llm_endpoint}",
+        "max_tokens": 2000,
+        "temperature": 0.7
+      },
+      "cross_references": {
+        "authentication": {
+          "module_name": "platform-auth",
+          "module_type": "jwt_config",
+          "purpose": "JWT token validation",
+          "required": true
+        },
+        "monitoring": {
+          "module_name": "prometheus-metrics",
+          "module_type": "monitoring",
+          "purpose": "Metrics collection and health monitoring",
+          "required": true
+        }
+      },
+      "metadata": {
+        "monitoring": {
+          "metrics_port": 8080,
+          "metrics_path": "/metrics",
+          "scrape": true,
+          "labels": {
+            "service": "llm-inference",
+            "tier": "backend",
+            "criticality": "critical"
+          }
+        }
+      }
+    },
+    {
+      "module_type": "apisix_gateway",
+      "name": "api-gateway",
+      "description": "APISIX API Gateway with Prometheus plugin",
+      "dependencies": ["platform-auth"],
+      "config": {
+        "gateway_type": "apisix",
+        "consumer": {
+          "username": "platform-consumer",
+          "plugins": {
+            "jwt-auth": {
+              "key": "platform-consumer-key",
+              "secret": "${environments.${environment}.secrets.jwt_secret_key}"
+            }
+          }
+        },
+        "global_plugins": [
+          {
+            "name": "prometheus",
+            "config": {
+              "prefer_name": true,
+              "export_uri": "/apisix/prometheus/metrics",
+              "metric_prefix": "apisix_",
+              "enable_export_server": true,
+              "export_addr": {"ip": "0.0.0.0", "port": 9091}
+            }
+          },
+          {
+            "name": "request-id",
+            "config": {
+              "header_name": "X-Request-Id",
+              "include_in_response": true
+            }
+          }
+        ],
+        "routes": [
+          {
+            "name": "llm-inference-route",
+            "uri": "/v1/chat/completions",
+            "methods": ["POST"],
+            "upstream": {
+              "type": "roundrobin",
+              "nodes": {"${environments.${environment}.urls.llm_service_host}": 1}
+            },
+            "plugins": {
+              "jwt-auth": {},
+              "limit-req": {"rate": 100, "burst": 50},
+              "prometheus": {"prefer_name": true}
+            }
+          }
+        ]
+      },
+      "cross_references": {
+        "monitoring": {
+          "module_name": "prometheus-metrics",
+          "module_type": "monitoring",
+          "purpose": "Export gateway metrics to Prometheus",
+          "required": true
+        }
+      }
+    }
+  ],
+  "environments": {
+    "development": {
+      "urls": {
+        "jwt_service_url": "http://localhost:5000",
+        "grafana_url": "http://localhost:3000",
+        "llm_endpoint": "http://localhost:8080/v1/chat/completions",
+        "llm_service_host": "localhost:8080"
+      },
+      "secrets": {
+        "jwt_secret_key": "dev-secret-key",
+        "slack_webhook": "https://hooks.slack.com/services/DEV/WEBHOOK",
+        "pagerduty_key": "dev-pagerduty-key"
+      }
+    },
+    "production": {
+      "urls": {
+        "jwt_service_url": "https://jwt.example.com",
+        "grafana_url": "https://grafana.example.com",
+        "llm_endpoint": "https://api.example.com/v1/chat/completions",
+        "llm_service_host": "llm-service.prod.svc.cluster.local:8080"
+      },
+      "secrets": {
+        "jwt_secret_key": "${PROD_JWT_SECRET}",
+        "slack_webhook": "${PROD_SLACK_WEBHOOK}",
+        "pagerduty_key": "${PROD_PAGERDUTY_KEY}"
+      }
+    }
+  }
+}

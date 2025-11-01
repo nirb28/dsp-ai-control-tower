@@ -565,7 +565,7 @@ class ProjectManifest(BaseModel):
     project_name: str = Field(..., description="Human-readable project name")
     version: Optional[str] = Field(default="1.0.0", description="Manifest version")
     description: Optional[str] = Field(None, description="Project description")
-    owner: str = Field(..., description="Project owner")
+    owner: Optional[str] = Field(None, description="Project owner")
     tags: Optional[List[str]] = Field(default_factory=list, description="Project tags")
     environment: Optional[str] = Field(default="development", description="Target environment")
     environments: Optional[Dict[str, Dict[str, Any]]] = Field(default_factory=dict, description="Environment-specific configurations")

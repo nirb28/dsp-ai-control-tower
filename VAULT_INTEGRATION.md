@@ -126,17 +126,6 @@ POST /vault/read-secret
 GET /manifests/my-project?resolve_env=true
 ```
 
-## Security Best Practices
-
-1. **Never commit secrets** - Use .gitignore
-2. **Encrypt all sensitive values**
-3. **Use environment variables** for Vault credentials
-4. **Rotate secrets regularly**
-5. **Use AppRole for production**
-6. **Enable SSL verification**
-7. **Limit token TTL**
-8. **Audit secret access**
-
 ## Files Created
 
 - `vault_client.py` - Multi-instance Vault client
@@ -153,5 +142,3 @@ See `manifests/multi-vault-example.json` for a complete example with:
 - Different authentication methods per instance
 - Mixed secret sources (vault, config, env)
 - Environment-specific configurations
-
-For detailed troubleshooting and migration guides, see the inline documentation in the source files.
