@@ -1,6 +1,27 @@
-# LangGraph Examples
+# Control Tower Examples
 
-This directory contains working examples demonstrating LangGraph workflow usage.
+This directory contains working examples and tools for the DSP AI Control Tower.
+
+## Available Tools
+
+### 1. Manifest Generator (`manifestor/`)
+
+**Purpose**: Interactive CLI tool for creating and managing Control Tower manifests.
+
+**Features**:
+- Interactive manifest creation with guided prompts
+- Template-based configuration for all 17 module types
+- Smart dependency management with cascading removal
+- Load and edit existing manifests
+- Preview and validation before saving
+
+**Quick Start**:
+```bash
+cd manifestor
+python manifest_generator.py
+```
+
+See [`manifestor/README.md`](manifestor/README.md) for complete documentation.
 
 ## Available Examples
 

@@ -175,6 +175,7 @@ cython_debug/
 
 # DS
 opa.exe
+.jl_venv/
 
 # Vault and Secrets - DO NOT COMMIT
 vault_config.json
