@@ -138,6 +138,8 @@ class PolicyStatusRequest(BaseModel):
 class ModuleType(str, Enum):
     JWT_CONFIG = "jwt_config"
     RAG_CONFIG = "rag_config"
+    RAG_SERVICE = "rag_service"
+    MODEL_SERVER = "model_server"
     API_GATEWAY = "api_gateway"
     INFERENCE_ENDPOINT = "inference_endpoint"
     SECURITY = "security"
@@ -183,6 +185,69 @@ class RAGConfigModule(BaseModel):
     retrieval_k: int = Field(default=5, description="Number of documents to retrieve")
     reranker_enabled: bool = Field(default=False, description="Enable reranking")
     query_expansion_enabled: bool = Field(default=False, description="Enable query expansion")
+
+class RAGServiceModule(BaseModel):
+    """RAG Service integration module for query and retrieve endpoints"""
+    service_url: str = Field(..., description="RAG service base URL (e.g., http://localhost:8080)")
+    configuration_name: str = Field(..., description="RAG configuration name to use")
+    
+    # Endpoint paths (relative to service_url)
+    query_endpoint: str = Field(default="/query", description="Query endpoint path")
+    retrieve_endpoint: str = Field(default="/retrieve", description="Retrieve endpoint path")
+    
+    # Default parameters for queries
+    default_k: int = Field(default=5, description="Default number of documents to retrieve")
+    default_similarity_threshold: float = Field(default=0.0, description="Default similarity threshold")
+    use_reranking: bool = Field(default=False, description="Enable reranking by default")
+    filter_after_reranking: bool = Field(default=True, description="Filter results after reranking")
+    
+    # Query expansion settings
+    query_expansion_enabled: bool = Field(default=False, description="Enable query expansion")
+    query_expansion_strategy: Optional[str] = Field(None, description="Query expansion strategy (fusion, multi_query)")
+    query_expansion_llm_config: Optional[str] = Field(None, description="LLM config name for query expansion")
+    query_expansion_num_queries: int = Field(default=3, description="Number of expanded queries")
+    
+    # Authentication
+    jwt_auth_enabled: bool = Field(default=False, description="Enable JWT authentication")
+    jwt_module_reference: Optional[str] = Field(None, description="Reference to JWT config module for authentication")
+    
+    # Timeout and retry settings
+    request_timeout: int = Field(default=60, description="Request timeout in seconds")
+    max_retries: int = Field(default=2, description="Maximum number of retries")
+    
+    # Metadata filtering
+    default_metadata_filter: Optional[Dict[str, Any]] = Field(None, description="Default metadata filter to apply")
+
+class ModelServerModule(BaseModel):
+    """Model Server integration module for embeddings, reranking, and classification"""
+    service_url: str = Field(..., description="Model server base URL (e.g., http://localhost:8000)")
+    
+    # Endpoint paths (relative to service_url)
+    embeddings_endpoint: str = Field(default="/embeddings", description="Embeddings endpoint path")
+    rerank_endpoint: str = Field(default="/rerank", description="Reranking endpoint path")
+    classify_endpoint: str = Field(default="/classify", description="Classification endpoint path")
+    health_endpoint: str = Field(default="/health", description="Health check endpoint path")
+    
+    # Model configurations
+    default_embedding_model: Optional[str] = Field(None, description="Default embedding model name")
+    default_reranker_model: Optional[str] = Field(None, description="Default reranker model name")
+    default_classifier_model: Optional[str] = Field(None, description="Default classifier model name")
+    
+    # Available models
+    available_embedding_models: List[str] = Field(default_factory=list, description="List of available embedding models")
+    available_reranker_models: List[str] = Field(default_factory=list, description="List of available reranker models")
+    available_classifier_models: List[str] = Field(default_factory=list, description="List of available classifier models")
+    
+    # Request settings
+    batch_size: int = Field(default=32, description="Batch size for processing")
+    request_timeout: int = Field(default=30, description="Request timeout in seconds")
+    max_retries: int = Field(default=2, description="Maximum number of retries")
+    
+    # Authentication
+    api_key_enabled: bool = Field(default=False, description="Enable API key authentication")
+    api_key: Optional[str] = Field(None, description="API key for authentication")
+    jwt_auth_enabled: bool = Field(default=False, description="Enable JWT authentication")
+    jwt_module_reference: Optional[str] = Field(None, description="Reference to JWT config module for authentication")
     
 class APIGatewayModule(BaseModel):
     gateway_type: str = Field(default="generic", description="Gateway type")
@@ -473,6 +538,8 @@ class ModuleConfig(BaseModel):
     config: Union[
         JWTConfigModule,
         RAGConfigModule,
+        RAGServiceModule,
+        ModelServerModule,
         APISIXGatewayModule,
         APIGatewayModule,
         InferenceEndpointModule,
@@ -506,6 +573,8 @@ class ModuleConfig(BaseModel):
         type_to_config = {
             'jwt_config': JWTConfigModule,
             'rag_config': RAGConfigModule,
+            'rag_service': RAGServiceModule,
+            'model_server': ModelServerModule,
             'api_gateway': APIGatewayModule,
             'inference_endpoint': InferenceEndpointModule,
             'security': SecurityModule,
@@ -880,6 +949,10 @@ def analyze_cross_references(modules: List[ModuleConfig]) -> Dict[str, Any]:
             services.extend(["routing", "rate_limiting", "cors", "load_balancing"])
         elif module.module_type == "rag_config":
             services.extend(["knowledge_retrieval", "document_search", "semantic_search"])
+        elif module.module_type == "rag_service":
+            services.extend(["rag_query", "rag_retrieve", "document_retrieval", "context_injection"])
+        elif module.module_type == "model_server":
+            services.extend(["embeddings", "reranking", "classification", "model_inference"])
         elif module.module_type == "inference_endpoint":
             services.extend(["llm_inference", "text_generation", "model_serving"])
         elif module.module_type == "data_pipeline":

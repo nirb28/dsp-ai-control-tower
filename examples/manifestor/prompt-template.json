@@ -1,0 +1,156 @@
+{
+  "project_id": "prompt-template",
+  "project_name": "${project_id}",
+  "owner": "BOfA",
+  "environment": "development",
+  "modules": [
+    {
+      "module_type": "vault",
+      "name": "vault-manager",
+      "config": {
+        "vault_instances": [
+          {
+            "instance_name": "dev-vault",
+            "vault_url": "http://localhost:8200",
+            "auth_method": "token",
+            "vault_token": "myroot",
+            "kv_mount_point": "secret",
+            "kv_version": 2,
+            "verify_ssl": false
+          }
+        ],
+        "secrets_config_file": "secrets_config.json",
+        "encryption_enabled": false,
+        "cache_secrets": true,
+        "cache_ttl": 300
+      }
+    },    
+    {
+      "module_type": "jwt_config",
+      "name": "simple-auth",
+      "config": {
+        "id": "jwt-config",
+        "owner": "${project_id} Team",
+        "service_url": "${environments.${environment}.urls.jwt_service_url}",
+        "claims": {
+          "static": {
+            "key": "${project_id}-consumer-key",
+            "rate_limit": 100,
+            "project": "${project_id}",
+            "environment": "${environment}",
+            "exp_hours": 1
+          }
+        }
+      }
+    },    
+    {
+      "module_type": "inference_endpoint",
+      "name": "convert",
+      "dependencies": ["simple-auth", "apisix-convert-route"],
+      "config": {
+        "model_name": "llama-3.1-70b-versatile",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/convert",
+        "system_prompt": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas.",
+        "max_tokens": 2000,
+        "temperature": 0.3
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "apisix-convert-route",
+      "dependencies": ["convert", "simple-auth", "langfuse-observability"],
+      "config": {
+        "gateway_type": "apisix",
+        "consumer": {
+          "username": "consumer",
+          "desc": "Consumer for SAS2PY project",
+          "plugins": {
+            "jwt-auth": {
+              "key": "sas2py-consumer-key",
+              "secret": "${environments.${environment}.secrets.jwt_secret_key}"
+            }
+          }
+        },
+        "service": {
+          "id": "service",
+          "name": "api-service",
+          "desc": "API Service for SAS to Python Code Conversion"
+        },
+        "routes": [
+          {
+            "name": "convert",
+            "uri": "/sas2py/convert",
+            "methods": ["POST"],
+            "upstream": {
+              "type": "roundrobin",
+              "nodes": {
+                "${environments.${environment}.urls.llm_base_url}": 1
+              },
+              "timeout": {
+                "connect": 60,
+                "send": 60,
+                "read": 60
+              }
+            },
+            "plugins": {
+              "jwt-auth": {},
+              "ai-prompt-template": {
+                "templates": [
+                  {
+                    "name": "converter",
+                    "template": {
+                      "model": "llama-3.1-8b-instant",
+                      "messages": [
+                        {
+                          "role": "system",
+                          "content": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas, numpy, and other standard libraries. Maintain the same logic and output format."
+                        },
+                        {
+                          "role": "user",
+                          "content": "{{user_input}}"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "_meta": {
+                  "priority": 2520
+                }
+              },
+              "proxy-rewrite": {
+                "uri": "/openai/v1/chat/completions",
+                "host": "api.groq.com",
+                "headers": {
+                  "Authorization": "Bearer ${environments.common.secrets.llm_api_key}",
+                  "Accept-Encoding": "identity"
+                }                
+              },
+              "response-rewrite": {
+                "headers": {
+                  "remove": ["Content-Encoding"]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "environments": {
+    "common": {
+      "secrets": {
+        "llm_api_key": "config:api_keys.groq"
+      }
+    },
+    "development": {
+      "secrets": {
+        "jwt_secret_key": "your-secret-key-here"
+      },
+      "urls": {
+        "llm_base_url": "api.groq.com",
+        "api_base_url": "http://localhost:8000",
+        "jwt_service_url": "http://localhost:5000"
+      }
+    }
+  }
+}

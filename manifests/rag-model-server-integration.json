@@ -1,0 +1,207 @@
+{
+  "project_id": "ai-rag-platform",
+  "project_name": "AI RAG Platform with Model Server",
+  "description": "Complete AI platform with RAG service and model server integration through APISIX gateway",
+  "version": "1.0.0",
+  "environment": "production",
+  "owner": "ai-team",
+  "modules": [
+    {
+      "module_type": "jwt_config",
+      "name": "auth-service",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "JWT authentication service for API security",
+      "config": {
+        "secret_key": "${JWT_SECRET_KEY}",
+        "algorithm": "HS256",
+        "expiration_minutes": 60,
+        "issuer": "ai-rag-platform",
+        "audience": "api-clients",
+        "refresh_token_enabled": true,
+        "service_url": "http://jwt-service:8000"
+      }
+    },
+    {
+      "module_type": "rag_service",
+      "name": "knowledge-base",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "RAG service for document retrieval and query answering",
+      "config": {
+        "service_url": "http://rag-service:8080",
+        "configuration_name": "production-kb",
+        "query_endpoint": "/query",
+        "retrieve_endpoint": "/retrieve",
+        "default_k": 10,
+        "default_similarity_threshold": 0.7,
+        "use_reranking": true,
+        "filter_after_reranking": true,
+        "query_expansion_enabled": true,
+        "query_expansion_strategy": "multi_query",
+        "query_expansion_llm_config": "llama3-8b",
+        "query_expansion_num_queries": 3,
+        "jwt_auth_enabled": true,
+        "jwt_module_reference": "auth-service",
+        "request_timeout": 120,
+        "max_retries": 3,
+        "default_metadata_filter": {
+          "status": "published",
+          "access_level": "public"
+        }
+      }
+    },
+    {
+      "module_type": "model_server",
+      "name": "embedding-reranker",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Model server for embeddings, reranking, and classification",
+      "config": {
+        "service_url": "http://model-server:8000",
+        "embeddings_endpoint": "/embeddings",
+        "rerank_endpoint": "/rerank",
+        "classify_endpoint": "/classify",
+        "health_endpoint": "/health",
+        "default_embedding_model": "BAAI/bge-large-en-v1.5",
+        "default_reranker_model": "BAAI/bge-reranker-large",
+        "default_classifier_model": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+        "available_embedding_models": [
+          "BAAI/bge-large-en-v1.5",
+          "sentence-transformers/all-mpnet-base-v2",
+          "intfloat/e5-large-v2"
+        ],
+        "available_reranker_models": [
+          "BAAI/bge-reranker-large",
+          "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        ],
+        "available_classifier_models": [
+          "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        ],
+        "batch_size": 32,
+        "request_timeout": 60,
+        "max_retries": 2,
+        "api_key_enabled": false,
+        "jwt_auth_enabled": true,
+        "jwt_module_reference": "auth-service"
+      }
+    },
+    {
+      "module_type": "api_gateway",
+      "name": "apisix-gateway",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "APISIX API Gateway for routing and security",
+      "config": {
+        "gateway_type": "apisix",
+        "admin_api_url": "http://apisix-admin:9180",
+        "admin_key": "${APISIX_ADMIN_KEY}",
+        "gateway_url": "http://apisix:9080",
+        "dashboard_url": "http://apisix-dashboard:9000",
+        "routes": [],
+        "upstreams": [],
+        "consumer": {
+          "username": "api_client",
+          "desc": "API client consumer",
+          "plugins": {
+            "jwt-auth": {
+              "key": "api-client-key",
+              "secret": "${JWT_SECRET_KEY}",
+              "algorithm": "HS256",
+              "exp": 3600
+            }
+          }
+        },
+        "service": {
+          "id": "service",
+          "name": "ai-rag-service",
+          "desc": "AI RAG Platform Service"
+        },
+        "global_plugins": [
+          {
+            "name": "prometheus",
+            "enabled": true,
+            "config": {
+              "prefer_name": true
+            }
+          },
+          {
+            "name": "request-id",
+            "enabled": true,
+            "config": {
+              "header_name": "X-Request-ID",
+              "include_in_response": true
+            }
+          },
+          {
+            "name": "cors",
+            "enabled": true,
+            "config": {
+              "allow_origins": "*",
+              "allow_methods": "GET,POST,PUT,DELETE,OPTIONS",
+              "allow_headers": "Authorization,Content-Type,X-Request-ID",
+              "expose_headers": "X-Request-ID",
+              "max_age": 3600,
+              "allow_credential": true
+            }
+          }
+        ],
+        "jwt_auth_enabled": true,
+        "rate_limiting_enabled": true,
+        "logging_enabled": true,
+        "prometheus_enabled": true,
+        "cors_enabled": true,
+        "cors_origins": ["*"],
+        "cors_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "default_timeout": 120,
+        "default_retries": 3,
+        "streaming_enabled": true,
+        "response_buffering": false,
+        "request_buffering": true
+      }
+    },
+    {
+      "module_type": "monitoring",
+      "name": "observability",
+      "version": "1.0.0",
+      "status": "enabled",
+      "description": "Monitoring and observability configuration",
+      "config": {
+        "prometheus_enabled": true,
+        "prometheus_endpoint": "http://prometheus:9090",
+        "grafana_enabled": true,
+        "grafana_endpoint": "http://grafana:3000",
+        "log_level": "INFO",
+        "trace_sampling_rate": 0.1,
+        "metrics_collection_interval": 15
+      }
+    }
+  ],
+  "environments": {
+    "production": {
+      "jwt_secret_key": "${PROD_JWT_SECRET}",
+      "apisix_admin_key": "${PROD_APISIX_KEY}",
+      "rag_service_url": "http://rag-service.prod.svc.cluster.local:8080",
+      "model_server_url": "http://model-server.prod.svc.cluster.local:8000"
+    },
+    "staging": {
+      "jwt_secret_key": "${STAGING_JWT_SECRET}",
+      "apisix_admin_key": "${STAGING_APISIX_KEY}",
+      "rag_service_url": "http://rag-service.staging.svc.cluster.local:8080",
+      "model_server_url": "http://model-server.staging.svc.cluster.local:8000"
+    },
+    "development": {
+      "jwt_secret_key": "${DEV_JWT_SECRET}",
+      "apisix_admin_key": "${DEV_APISIX_KEY}",
+      "rag_service_url": "http://localhost:8080",
+      "model_server_url": "http://localhost:8000"
+    }
+  },
+  "tags": ["rag", "model-server", "apisix", "jwt", "production"],
+  "metadata": {
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "created_by": "ai-team",
+    "deployment_target": "kubernetes"
+  }
+}
