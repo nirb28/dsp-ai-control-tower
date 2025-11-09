@@ -384,11 +384,12 @@ class ManifestGenerator:
             self.print_error("The 'requests' package is required. Install with: pip install requests")
             return
         try:
-            url = f"{base_url.rstrip('/')}/admin/sync"
-            params = {}
-            if selection != 'ALL':
-                params = {"project_id": selection}
-            resp = requests.post(url, params=params, timeout=60)
+            base = base_url.rstrip('/')
+            if selection == 'ALL':
+                url = f"{base}/admin/sync"
+            else:
+                url = f"{base}/admin/configure/{selection}"
+            resp = requests.post(url, timeout=60)
             if resp.status_code == 200:
                 try:
                     data = resp.json()
