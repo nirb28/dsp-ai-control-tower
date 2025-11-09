@@ -38,7 +38,7 @@
     },    
     {
       "module_type": "jwt_config",
-      "name": "simple-auth",
+      "name": "auth",
       "config": {
         "id": "jwt-config",
         "owner": "SAS2PY Team",
@@ -57,7 +57,7 @@
     {
       "module_type": "inference_endpoint",
       "name": "convert",
-      "dependencies": ["simple-auth", "apisix-convert-route"],
+      "dependencies": ["auth", "apisix-convert-route"],
       "config": {
         "model_name": "llama-3.1-70b-versatile",
         "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/convert",
@@ -69,7 +69,7 @@
     {
       "module_type": "inference_endpoint",
       "name": "test",
-      "dependencies": ["simple-auth", "apisix-test-route"],
+      "dependencies": ["auth", "apisix-test-route"],
       "config": {
         "model_name": "llama-3.1-8b-instant",
         "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/test",
@@ -98,7 +98,7 @@
     {
       "module_type": "api_gateway",
       "name": "apisix-convert-route",
-      "dependencies": ["convert", "simple-auth", "langfuse-observability"],
+      "dependencies": ["convert", "auth", "langfuse-observability"],
       "config": {
         "gateway_type": "apisix",
         "consumer": {

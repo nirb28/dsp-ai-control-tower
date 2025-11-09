@@ -4,6 +4,7 @@ Manifest Generator CLI - Interactive tool for creating and managing Control Towe
 """
 
 import json
+import re
 import os
 import sys
 from typing import Dict, Any, List, Optional, Set
@@ -336,6 +337,70 @@ class ManifestGenerator:
         except Exception as e:
             self.print_error(f"Failed to save manifest: {e}")
     
+    def _list_manifest_files(self) -> List[Path]:
+        """List available manifest files in the project's manifests directory"""
+        manifests_dir = Path(__file__).parent.parent.parent / "manifests"
+        if not manifests_dir.exists():
+            self.print_warning("Manifests directory not found")
+            return []
+        return sorted(manifests_dir.glob("*.json"))
+
+    def _select_manifest_for_sync(self) -> Optional[str]:
+        """Allow user to select a manifest to sync, or choose all. Returns project_id or 'ALL' or None."""
+        manifests = self._list_manifest_files()
+        if not manifests:
+            return None
+        self.print_header("SELECT MANIFEST FOR SYNC")
+        print(f"{Fore.YELLOW}  0{Style.RESET_ALL}. Cancel")
+        print(f"{Fore.YELLOW}  A{Style.RESET_ALL}. All manifests")
+        for i, mpath in enumerate(manifests, 1):
+            print(f"{Fore.YELLOW}{i:>3}{Style.RESET_ALL}. {mpath.name}")
+        choice = self.get_input("\nSelect option")
+        if choice.lower() == '0':
+            return None
+        if choice.lower() == 'a':
+            return 'ALL'
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(manifests):
+                return Path(manifests[idx]).stem
+        except ValueError:
+            pass
+        self.print_error("Invalid selection")
+        return None
+
+    def sync_manifests(self):
+        """Sync manifests to gateway via Front Door /admin/sync endpoint"""
+        self.print_header("SYNC MANIFESTS TO GATEWAY")
+        selection = self._select_manifest_for_sync()
+        if selection is None:
+            self.print_info("Sync cancelled")
+            return
+        base_url = self.get_input("Front Door base URL", "http://localhost:8080")
+        # Lazy import requests to avoid hard dependency
+        try:
+            import requests  # type: ignore
+        except Exception:
+            self.print_error("The 'requests' package is required. Install with: pip install requests")
+            return
+        try:
+            url = f"{base_url.rstrip('/')}/admin/sync"
+            params = {}
+            if selection != 'ALL':
+                params = {"project_id": selection}
+            resp = requests.post(url, params=params, timeout=60)
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {"text": resp.text}
+                self.print_success("Sync completed successfully")
+                self.print_info(f"Response summary: {str(data)[:500]}")
+            else:
+                self.print_error(f"Sync failed: {resp.status_code} - {resp.text[:500]}")
+        except Exception as e:
+            self.print_error(f"Failed to call sync endpoint: {e}")
+    
     def load_manifest(self):
         """Load an existing manifest"""
         # Load from manifests directory (two levels up from examples/manifestor)
@@ -386,6 +451,108 @@ class ManifestGenerator:
             self.print_success(f"Loaded manifest: {filepath.name}")
         except Exception as e:
             self.print_error(f"Failed to load manifest: {e}")
+
+    def _list_template_files(self) -> List[Path]:
+        """List available template files in the templates directory"""
+        templates_dir = Path(__file__).parent / "templates"
+        if not templates_dir.exists():
+            self.print_warning("No templates directory found (examples/manifestor/templates)")
+            return []
+        return sorted(templates_dir.glob("*.json"))
+
+    def _extract_template_vars(self, content: str) -> List[str]:
+        """Extract unique variable names matching ${t.<name>} from template content"""
+        pattern = re.compile(r"\$\{t\.([a-zA-Z0-9_.-]+)\}")
+        return sorted(set(m.group(1) for m in pattern.finditer(content)))
+
+    def _render_template_content(self, content: str, values: Dict[str, str]) -> str:
+        """Replace ${t.var} placeholders with provided values"""
+        def repl(match: re.Match) -> str:
+            key = match.group(1)
+            return values.get(key, match.group(0))
+        return re.sub(r"\$\{t\.([a-zA-Z0-9_.-]+)\}", repl, content)
+
+    def create_from_template(self):
+        """Create a manifest from a JSON template by substituting ${t.*} variables"""
+        self.print_header("CREATE MANIFEST FROM TEMPLATE")
+
+        templates = self._list_template_files()
+        if not templates:
+            return
+
+        print("Available templates:")
+        for i, tpath in enumerate(templates, 1):
+            print(f"  {i}. {tpath.name}")
+
+        choice = self.get_input("\nSelect template number (0 to cancel)")
+        try:
+            idx = int(choice) - 1
+            if idx == -1:
+                return
+            if idx < 0 or idx >= len(templates):
+                self.print_error("Invalid selection")
+                return
+        except ValueError:
+            self.print_error("Invalid input")
+            return
+
+        template_path = templates[idx]
+        try:
+            raw = template_path.read_text(encoding="utf-8")
+        except Exception as e:
+            self.print_error(f"Failed to read template: {e}")
+            return
+
+        vars_needed = self._extract_template_vars(raw)
+        values: Dict[str, str] = {}
+        if vars_needed:
+            self.print_info("Provide values for template variables (press Enter to leave unchanged)")
+        for var in vars_needed:
+            prompt = var
+            default = None
+            # convenience defaults
+            if var == "project_id":
+                default = self.manifest.get("project_id") or ""
+            if var == "environment":
+                default = self.manifest.get("environment") or "development"
+            values[var] = self.get_input(prompt, default)
+
+        rendered = self._render_template_content(raw, values)
+
+        # Validate JSON
+        try:
+            manifest_obj = json.loads(rendered)
+        except json.JSONDecodeError as e:
+            self.print_error(f"Rendered template is not valid JSON: {e}")
+            return
+
+        project_id = manifest_obj.get("project_id") or values.get("project_id") or ""
+        if not project_id:
+            self.print_error("project_id is required in the rendered manifest")
+            return
+
+        # Save to manifests directory
+        manifests_dir = Path(__file__).parent.parent.parent / "manifests"
+        manifests_dir.mkdir(exist_ok=True)
+        filename = f"{project_id}.json"
+        filepath = manifests_dir / filename
+
+        if filepath.exists():
+            confirm = self.get_choice(
+                f"\nFile '{filename}' already exists. Overwrite?",
+                ["yes", "no"],
+                "no"
+            )
+            if confirm == "no":
+                self.print_info("Save cancelled")
+                return
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(manifest_obj, f, indent=2)
+            self.print_success(f"Manifest generated from template and saved to: {filepath}")
+        except Exception as e:
+            self.print_error(f"Failed to save manifest: {e}")
     
     def run(self):
         """Main application loop"""
@@ -401,6 +568,8 @@ class ManifestGenerator:
             print(f"  {Fore.YELLOW}5{Style.RESET_ALL}. List modules")
             print(f"  {Fore.YELLOW}6{Style.RESET_ALL}. Preview manifest")
             print(f"  {Fore.YELLOW}7{Style.RESET_ALL}. Save manifest")
+            print(f"  {Fore.YELLOW}8{Style.RESET_ALL}. Create manifest from template")
+            print(f"  {Fore.YELLOW}9{Style.RESET_ALL}. Sync manifests to gateway")
             print(f"  {Fore.YELLOW}0{Style.RESET_ALL}. Exit")
             
             choice = self.get_input("\nSelect option")
@@ -428,6 +597,10 @@ class ManifestGenerator:
                     self.preview_manifest()
             elif choice == "7":
                 self.save_manifest()
+            elif choice == "8":
+                self.create_from_template()
+            elif choice == "9":
+                self.sync_manifests()
             elif choice == "0":
                 print(f"\n{Fore.GREEN}Goodbye!{Style.RESET_ALL}\n")
                 break
@@ -442,3 +615,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print(f"\n\n{Fore.YELLOW}Operation cancelled by user{Style.RESET_ALL}\n")
         sys.exit(0)
+
+    

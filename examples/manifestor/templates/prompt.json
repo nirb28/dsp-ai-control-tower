@@ -1,6 +1,6 @@
 {
-  "project_id": "prompt-template",
-  "project_name": "${project_id}",
+  "project_id": "${t.project_id}",
+  "project_name": "Add a description for the project",
   "owner": "BOfA",
   "environment": "development",
   "modules": [
@@ -27,16 +27,16 @@
     },    
     {
       "module_type": "jwt_config",
-      "name": "simple-auth",
+      "name": "auth",
       "config": {
         "id": "jwt-config",
-        "owner": "${project_id} Team",
+        "owner": "${t.project_id} Team",
         "service_url": "${environments.${environment}.urls.jwt_service_url}",
         "claims": {
           "static": {
-            "key": "${project_id}-consumer-key",
+            "key": "${t.project_id}-consumer-key",
             "rate_limit": 100,
-            "project": "${project_id}",
+            "project": "${t.project_id}",
             "environment": "${environment}",
             "exp_hours": 1
           }
@@ -45,28 +45,27 @@
     },    
     {
       "module_type": "inference_endpoint",
-      "name": "convert",
-      "dependencies": ["simple-auth", "apisix-convert-route"],
+      "name": "execute",
+      "dependencies": ["auth", "apisix-execute-route"],
       "config": {
         "model_name": "llama-3.1-70b-versatile",
-        "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/convert",
-        "system_prompt": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas.",
+        "endpoint_url": "${environments.${environment}.urls.api_base_url}/sas2py/execute",
         "max_tokens": 2000,
         "temperature": 0.3
       }
     },
     {
       "module_type": "api_gateway",
-      "name": "apisix-convert-route",
-      "dependencies": ["convert", "simple-auth", "langfuse-observability"],
+      "name": "apisix-execute-route",
+      "dependencies": ["execute", "auth", "langfuse-observability"],
       "config": {
         "gateway_type": "apisix",
         "consumer": {
           "username": "consumer",
-          "desc": "Consumer for SAS2PY project",
+          "desc": "Consumer for ${t.project_id} project",
           "plugins": {
             "jwt-auth": {
-              "key": "sas2py-consumer-key",
+              "key": "${t.project_id}-consumer-key",
               "secret": "${environments.${environment}.secrets.jwt_secret_key}"
             }
           }
@@ -74,12 +73,12 @@
         "service": {
           "id": "service",
           "name": "api-service",
-          "desc": "API Service for SAS to Python Code Conversion"
+          "desc": "API Service for ${t.project_id}"
         },
         "routes": [
           {
-            "name": "convert",
-            "uri": "/sas2py/convert",
+            "name": "execute",
+            "uri": "/${t.project_id}/execute",
             "methods": ["POST"],
             "upstream": {
               "type": "roundrobin",
@@ -97,17 +96,17 @@
               "ai-prompt-template": {
                 "templates": [
                   {
-                    "name": "converter",
+                    "name": "execute",
                     "template": {
                       "model": "llama-3.1-8b-instant",
                       "messages": [
                         {
                           "role": "system",
-                          "content": "You are an expert SAS to Python code converter. Convert SAS code to equivalent Python code using pandas, numpy, and other standard libraries. Maintain the same logic and output format."
+                          "content": "${t.system_prompt}"
                         },
                         {
                           "role": "user",
-                          "content": "{{user_input}}"
+                          "content": "${t.user_prompt}"
                         }
                       ]
                     }
